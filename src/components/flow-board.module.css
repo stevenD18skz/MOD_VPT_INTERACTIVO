@@ -931,6 +931,222 @@
   color: var(--ink-soft);
 }
 
+/* ---------- material de apoyo ---------- */
+.countBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--chrome);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.matTop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 18px 12px;
+  border-radius: 12px;
+  border: 1.6px dashed var(--line);
+  background: var(--chrome-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.dropzone span {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.dropzone svg {
+  color: var(--accent);
+}
+.dropzone:hover,
+.dropzoneOn {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--chrome-2));
+}
+.dropzone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.matNote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--chrome-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.uploads {
+  list-style: none;
+  margin: 0;
+  padding: 10px 18px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.uploadItem {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  font-size: 11.5px;
+}
+.uploadName {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.uploadBar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--chrome-2);
+}
+.uploadBar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+.uploadItem[data-state="done"] .uploadBar span {
+  background: var(--done-line);
+}
+.uploadItem[data-state="error"] .uploadBar span {
+  background: var(--danger);
+}
+.linkBtn {
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.matList {
+  margin-top: 12px;
+}
+.mcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--chrome);
+}
+.micon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: #fff;
+  background: #6b7280;
+}
+.micon[data-kind="pdf"] {
+  background: #d93025;
+}
+.micon[data-kind="word"] {
+  background: #2b579a;
+}
+.micon[data-kind="excel"] {
+  background: #217346;
+}
+.micon[data-kind="ppt"] {
+  background: #c43e1c;
+}
+.micon[data-kind="img"] {
+  background: #8e44ad;
+}
+.micon[data-kind="knime"] {
+  background: #fdd800;
+  color: #4a3d00;
+}
+.micon[data-kind="pbi"] {
+  background: #e8a600;
+  color: #3d2c00;
+}
+.micon[data-kind="py"] {
+  background: #3776ab;
+}
+.micon[data-kind="link"] {
+  background: color-mix(in srgb, var(--accent) 15%, var(--chrome));
+  color: var(--accent);
+}
+.mtitle {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+.mtitle:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.mactions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mconfirm {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.dangerSolid {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+}
+.matEmpty {
+  margin: 32px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.matEmpty strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
 /* ---------- estados vacíos ---------- */
 .center {
   flex: 1;

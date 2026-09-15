@@ -332,6 +332,11 @@ function FlowCard({ item: { flow, sum }, onEdit }: { item: Item; onEdit: () => v
           <Pill title="Documentos con enlace">
             <LinkIcon /> {sum.docs.linked} enlaces
           </Pill>
+          {(flow.materials?.length ?? 0) > 0 && (
+            <Pill title="Material de apoyo">
+              <ClipIcon /> {flow.materials!.length} material
+            </Pill>
+          )}
           {sum.counts.prog > 0 && <Pill dot="var(--prog-line)">{sum.counts.prog} en progreso</Pill>}
           {sum.counts.test > 0 && <Pill dot="var(--test-line)">{sum.counts.test} en pruebas</Pill>}
         </div>
@@ -676,6 +681,14 @@ function DocIcon() {
     <svg {...svgProps} width="12" height="12">
       <path d="M4 1.5h5.5l3 3v10h-8.5z" />
       <path d="M9.5 1.5v3h3" />
+    </svg>
+  );
+}
+
+function ClipIcon() {
+  return (
+    <svg {...svgProps} width="12" height="12">
+      <path d="M13 7.5 8 12.5a3.2 3.2 0 0 1-4.5-4.5l5.3-5.3a2.1 2.1 0 0 1 3 3L6.5 11a1.1 1.1 0 0 1-1.5-1.5L10 4.5" />
     </svg>
   );
 }

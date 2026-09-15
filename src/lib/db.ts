@@ -1,7 +1,7 @@
 // Acceso a Turso (libSQL). Solo se usa en el servidor (Route Handlers y Server Actions).
 
-import { createClient, type Client, type Row } from "@libsql/client";
-import type { DocStatus, Flow, NodeState } from "./flow-definition";
+import { createClient, type Client, type InStatement, type Row } from "@libsql/client";
+import type { DocStatus, Flow, Material, NodeState } from "./flow-definition";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   id          TEXT PRIMARY KEY,
@@ -14,6 +14,17 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   doc_status  TEXT NOT NULL DEFAULT '{}'
 )`;
 
+const MATERIALS_SCHEMA = `CREATE TABLE IF NOT EXISTS materials (
+  id           TEXT PRIMARY KEY,
+  flow_id      TEXT NOT NULL,
+  kind         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  url          TEXT NOT NULL,
+  size         INTEGER,
+  content_type TEXT,
+  created_at   INTEGER NOT NULL
+)`;
+
 let client: Client | null = null;
 let ready: Promise<void> | null = null;
 
@@ -21,9 +32,12 @@ export function isDbConfigured() {
   return Boolean(process.env.TURSO_DATABASE_URL);
 }
 
-/** Crea la tabla y agrega columnas nuevas a bases creadas con versiones anteriores. */
+/** Crea las tablas y agrega columnas nuevas a bases creadas con versiones anteriores. */
 async function migrate(c: Client) {
-  await c.execute(SCHEMA);
+  await c.batch(
+    [SCHEMA, MATERIALS_SCHEMA, "CREATE INDEX IF NOT EXISTS materials_flow ON materials (flow_id)"],
+    "write",
+  );
   const cols = await c.execute("PRAGMA table_info(flows)");
   if (!cols.rows.some((r) => r.name === "doc_status")) {
     try {
@@ -35,7 +49,7 @@ async function migrate(c: Client) {
   }
 }
 
-/** Cliente perezoso: no se crea en el build y prepara la tabla la primera vez. */
+/** Cliente perezoso: no se crea en el build y prepara las tablas la primera vez. */
 async function db(): Promise<Client> {
   if (!isDbConfigured()) throw new Error("Turso no está configurado (falta TURSO_DATABASE_URL).");
   if (!client) {
@@ -75,29 +89,65 @@ function toFlow(r: Row): Flow {
   };
 }
 
-export async function listFlows(): Promise<Flow[]> {
-  const res = await (await db()).execute("SELECT * FROM flows ORDER BY updated_at DESC");
-  return res.rows.map(toFlow);
+function toMaterial(r: Row): Material {
+  return {
+    id: String(r.id),
+    kind: r.kind === "file" ? "file" : "link",
+    title: String(r.title),
+    url: String(r.url),
+    size: r.size == null ? undefined : Number(r.size),
+    contentType: r.content_type == null ? undefined : String(r.content_type),
+    createdAt: Number(r.created_at),
+  };
 }
 
-/** Inserta flujos; los que ya existan (mismo id) se ignoran. */
+export async function listFlows(): Promise<Flow[]> {
+  const [flows, materials] = await (await db()).batch(
+    ["SELECT * FROM flows ORDER BY updated_at DESC", "SELECT * FROM materials ORDER BY created_at"],
+    "read",
+  );
+  const byFlow = new Map<string, Material[]>();
+  for (const r of materials.rows) {
+    const key = String(r.flow_id);
+    byFlow.set(key, [...(byFlow.get(key) ?? []), toMaterial(r)]);
+  }
+  return flows.rows.map((r) => ({ ...toFlow(r), materials: byFlow.get(String(r.id)) ?? [] }));
+}
+
+export async function flowExists(id: string) {
+  const res = await (await db()).execute({ sql: "SELECT 1 FROM flows WHERE id = ?", args: [id] });
+  return res.rows.length > 0;
+}
+
+function materialInsert(flowId: string, m: Material, orIgnore = false): InStatement {
+  return {
+    sql: `INSERT ${orIgnore ? "OR IGNORE " : ""}INTO materials (id, flow_id, kind, title, url, size, content_type, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [m.id, flowId, m.kind, m.title, m.url, m.size ?? null, m.contentType ?? null, m.createdAt],
+  };
+}
+
+/** Inserta flujos (con su material); los que ya existan (mismo id) se ignoran. */
 export async function insertFlows(flows: Flow[]) {
   if (!flows.length) return;
   await (await db()).batch(
-    flows.map((f) => ({
-      sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        f.id,
-        f.name,
-        f.description,
-        f.createdAt,
-        f.updatedAt,
-        JSON.stringify(f.nodes),
-        JSON.stringify(f.links ?? {}),
-        JSON.stringify(f.docs ?? {}),
-      ],
-    })),
+    flows.flatMap((f) => [
+      {
+        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          f.id,
+          f.name,
+          f.description,
+          f.createdAt,
+          f.updatedAt,
+          JSON.stringify(f.nodes),
+          JSON.stringify(f.links ?? {}),
+          JSON.stringify(f.docs ?? {}),
+        ],
+      },
+      ...(f.materials ?? []).map((m) => materialInsert(f.id, m, true)),
+    ]),
     "write",
   );
 }
@@ -109,8 +159,21 @@ export async function updateFlowInfo(id: string, name: string, description: stri
   });
 }
 
-export async function deleteFlow(id: string) {
-  await (await db()).execute({ sql: "DELETE FROM flows WHERE id = ?", args: [id] });
+/** Borra el flujo y su material; devuelve las URLs de archivos para borrarlos del Blob. */
+export async function deleteFlow(id: string): Promise<string[]> {
+  const c = await db();
+  const files = await c.execute({
+    sql: "SELECT url FROM materials WHERE flow_id = ? AND kind = 'file'",
+    args: [id],
+  });
+  await c.batch(
+    [
+      { sql: "DELETE FROM materials WHERE flow_id = ?", args: [id] },
+      { sql: "DELETE FROM flows WHERE id = ?", args: [id] },
+    ],
+    "write",
+  );
+  return files.rows.map((r) => String(r.url));
 }
 
 // Las rutas JSON usan claves entre comillas; los ids de paso y nombres de documento
@@ -152,4 +215,36 @@ export async function setDocLink(id: string, docKey: string, url: string | null)
 /** "empty" es el estado por defecto, así que se guarda quitando la clave. */
 export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
   await setJsonKey("doc_status", id, docKey, status === "empty" ? null : status);
+}
+
+/* ================= material de apoyo ================= */
+
+export async function insertMaterial(flowId: string, m: Material) {
+  await (await db()).batch(
+    [materialInsert(flowId, m), { sql: "UPDATE flows SET updated_at = ? WHERE id = ?", args: [Date.now(), flowId] }],
+    "write",
+  );
+}
+
+export async function getMaterial(id: string): Promise<Material | null> {
+  const res = await (await db()).execute({ sql: "SELECT * FROM materials WHERE id = ?", args: [id] });
+  return res.rows.length ? toMaterial(res.rows[0]) : null;
+}
+
+/** Borra un material del flujo y lo devuelve (para borrar su archivo del Blob). */
+export async function deleteMaterial(flowId: string, id: string): Promise<Material | null> {
+  const c = await db();
+  const res = await c.execute({
+    sql: "SELECT * FROM materials WHERE id = ? AND flow_id = ?",
+    args: [id, flowId],
+  });
+  if (!res.rows.length) return null;
+  await c.batch(
+    [
+      { sql: "DELETE FROM materials WHERE id = ?", args: [id] },
+      { sql: "UPDATE flows SET updated_at = ? WHERE id = ?", args: [Date.now(), flowId] },
+    ],
+    "write",
+  );
+  return toMaterial(res.rows[0]);
 }

@@ -44,8 +44,10 @@ import {
   setNodeStatus,
   useFlows,
   useStoreMode,
+  useUploadsEnabled,
   type Flow,
 } from "@/lib/flow-store";
+import { ClipGlyph, MaterialPanel } from "./material-panel";
 import { OfflineNotice, SyncBadge } from "./sync-badge";
 
 export function FlowBoard({ id }: { id: string }) {
@@ -82,7 +84,9 @@ function Board({ flow }: { flow: Flow }) {
   const [zoom, setZoom] = useState(100);
   const [panning, setPanning] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  /** Panel lateral abierto: documentos del flujo o material de apoyo. */
+  const [panel, setPanel] = useState<"docs" | "material" | null>(null);
+  const uploads = useUploadsEnabled();
 
   /* ---------- popover placement ---------- */
   const place = useCallback(() => {
@@ -203,15 +207,15 @@ function Board({ flow }: { flow: Flow }) {
     return () => ro.disconnect();
   }, [openId, place]);
 
-  // Escape cierra el panel de documentos, pero solo si no hay un popover abierto encima.
+  // Escape cierra el panel lateral, pero solo si no hay un popover abierto encima.
   useEffect(() => {
-    if (!drawerOpen) return;
+    if (!panel) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented && !openIdRef.current) setDrawerOpen(false);
+      if (e.key === "Escape" && !e.defaultPrevented && !openIdRef.current) setPanel(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
+  }, [panel]);
 
   const links = flow.links ?? NO_LINKS;
   const docStatus = flow.docs ?? NO_DOCS;
@@ -230,7 +234,7 @@ function Board({ flow }: { flow: Flow }) {
     const s = Math.max(scaleRef.current, 0.9);
     if (s !== scaleRef.current) applyScale(s);
     vp.scrollTo({ left: n.x * s - vp.clientWidth / 2, top: n.y * s - vp.clientHeight / 2, behavior: "smooth" });
-    setDrawerOpen(false);
+    setPanel(null);
     setOpenId(id);
   };
 
@@ -275,14 +279,26 @@ function Board({ flow }: { flow: Flow }) {
         <button
           type="button"
           className={`${styles.tb} ${styles.docsBtn}`}
-          aria-expanded={drawerOpen}
+          aria-expanded={panel === "docs"}
           aria-controls="docs-drawer"
-          onClick={() => setDrawerOpen((v) => !v)}
+          onClick={() => setPanel((p) => (p === "docs" ? null : "docs"))}
           title="Ver y gestionar todos los documentos del flujo"
         >
           <DocGlyph />
           {docsLinked} / {DOC_KEYS.length} docs con enlace
           <span className={styles.docsBtnDone}>{docsDone} completos</span>
+        </button>
+        <button
+          type="button"
+          className={`${styles.tb} ${styles.docsBtn}`}
+          aria-expanded={panel === "material"}
+          aria-controls="material-drawer"
+          onClick={() => setPanel((p) => (p === "material" ? null : "material"))}
+          title="Manuales, guías, plantillas y enlaces de esta automatización"
+        >
+          <ClipGlyph />
+          Material de apoyo
+          <span className={styles.countBadge}>{flow.materials?.length ?? 0}</span>
         </button>
       </header>
 
@@ -377,15 +393,16 @@ function Board({ flow }: { flow: Flow }) {
         </div>
       )}
 
-      {drawerOpen && (
+      {panel === "docs" && (
         <DocsDrawer
           flowId={flow.id}
           links={links}
           docStatus={docStatus}
-          onClose={() => setDrawerOpen(false)}
+          onClose={() => setPanel(null)}
           onGo={focusNode}
         />
       )}
+      {panel === "material" && <MaterialPanel flow={flow} uploads={uploads} onClose={() => setPanel(null)} />}
     </div>
   );
 }
@@ -1403,6 +1420,95 @@ const Diagram = memo(function Diagram({
           return null;
         })}
       </g>
+
+      <DevTools cx={BY_ID.t18.x} top={BY_ID.t18.y + dims(BY_ID.t18).h / 2 + 18} />
     </svg>
   );
 });
+
+/* ================= decoración: herramientas de desarrollo ================= */
+
+/** Íconos (solo visuales) de las herramientas habituales bajo "Desarrollar solución". */
+function DevTools({ cx, top }: { cx: number; top: number }) {
+  const tools = [
+    { name: "Python", icon: <PythonMark /> },
+    { name: "KNIME", icon: <KnimeMark /> },
+    { name: "Power Automate", icon: <PowerAutomateMark /> },
+    { name: "Power BI", icon: <PowerBiMark /> },
+  ];
+  const cell = 66;
+  const w = cell * tools.length + 16;
+  const x0 = cx - w / 2;
+  return (
+    <g aria-hidden>
+      <rect
+        x={x0}
+        y={top}
+        width={w}
+        height={78}
+        rx={10}
+        style={{ fill: "var(--lane-head)", stroke: "var(--line)" }}
+        strokeWidth={1.2}
+      />
+      <text x={cx} y={top + 15} textAnchor="middle" fontSize={9.5} fontWeight={700} letterSpacing={0.8} style={soft}>
+        HERRAMIENTAS
+      </text>
+      {tools.map((t, i) => {
+        const x = x0 + 8 + i * cell + cell / 2;
+        return (
+          <g key={t.name}>
+            <g transform={`translate(${x - 14} ${top + 22}) scale(${28 / 24})`}>{t.icon}</g>
+            <text x={x} y={top + 67} textAnchor="middle" fontSize={9.5} style={soft}>
+              {t.name}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+function PythonMark() {
+  return (
+    <>
+      <path
+        d="M11.9 2C8.1 2 8.3 3.7 8.3 3.7v1.8h3.7v.5H6.8S4.4 5.7 4.4 9.6s2.1 3.8 2.1 3.8h1.3v-1.8s-.1-2.1 2.1-2.1h3.6s2 0 2-2V4.3S15.8 2 11.9 2z"
+        fill="#3776AB"
+      />
+      <circle cx="9.9" cy="3.9" r=".75" fill="#fff" />
+      <path
+        d="M12.1 22c3.8 0 3.6-1.7 3.6-1.7v-1.8H12v-.5h5.2s2.4.3 2.4-3.6-2.1-3.8-2.1-3.8h-1.3v1.8s.1 2.1-2.1 2.1h-3.6s-2 0-2 2v3.2S8.2 22 12.1 22z"
+        fill="#FFD43B"
+      />
+      <circle cx="14.1" cy="20.1" r=".75" fill="#fff" />
+    </>
+  );
+}
+
+function KnimeMark() {
+  return (
+    <>
+      <path d="M12 2.5 22 20H2z" fill="#FDD800" stroke="#C9A800" strokeWidth=".8" strokeLinejoin="round" />
+      <path d="M12 8.5 16.5 16.5h-9z" fill="none" stroke="#6E5A00" strokeWidth="1.4" strokeLinejoin="round" />
+    </>
+  );
+}
+
+function PowerAutomateMark() {
+  return (
+    <>
+      <path d="M2 5h9l6 7-6 7H2l6-7z" fill="#0F6CBD" />
+      <path d="M10 5h6l6 7-6 7h-6l6-7z" fill="#50A0F0" />
+    </>
+  );
+}
+
+function PowerBiMark() {
+  return (
+    <>
+      <rect x="3" y="12" width="4.5" height="9" rx="1.2" fill="#F2C811" />
+      <rect x="9.75" y="7.5" width="4.5" height="13.5" rx="1.2" fill="#E8A600" />
+      <rect x="16.5" y="3" width="4.5" height="18" rx="1.2" fill="#C98A00" />
+    </>
+  );
+}

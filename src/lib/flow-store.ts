@@ -4,8 +4,11 @@
 // - Sin Turso ("local"): todo se guarda en localStorage, solo en este navegador.
 
 import { useSyncExternalStore } from "react";
-import type { DocStatus, Flow, Status } from "./flow-definition";
+import type { DocStatus, Flow, Material, Status } from "./flow-definition";
 import {
+  addFileMaterial as remoteAddFile,
+  addLinkMaterial as remoteAddLink,
+  deleteMaterial as remoteDeleteMaterial,
   createFlow as remoteCreate,
   deleteFlow as remoteDelete,
   importFlows as remoteImport,
@@ -27,6 +30,8 @@ const BACKUP_KEY = "flujo-interactivo:flows:respaldo-local";
 let flows: Flow[] | null = null;
 let mode: Mode = "loading";
 let sync: Sync = "idle";
+/** Si se pueden subir archivos al material de apoyo (Turso + Vercel Blob configurados). */
+let uploads = false;
 let pending = 0;
 let queue: Promise<unknown> = Promise.resolve();
 let started = false;
@@ -51,7 +56,7 @@ function writeLocal(next: Flow[]) {
   } catch {}
 }
 
-type ApiResponse = { configured: boolean; flows: Flow[] };
+type ApiResponse = { configured: boolean; uploads?: boolean; flows: Flow[] };
 
 async function fetchFlows(): Promise<ApiResponse> {
   const res = await fetch("/api/flows", { cache: "no-store" });
@@ -62,6 +67,7 @@ async function fetchFlows(): Promise<ApiResponse> {
 async function load() {
   try {
     const data = await fetchFlows();
+    uploads = Boolean(data.configured && data.uploads);
     if (!data.configured) {
       mode = "local";
       flows = readLocal();
@@ -151,6 +157,10 @@ export function useSyncState(): Sync {
   return useSyncExternalStore(subscribe, () => sync, () => "idle" as Sync);
 }
 
+export function useUploadsEnabled(): boolean {
+  return useSyncExternalStore(subscribe, () => uploads, () => false);
+}
+
 /* ================= mutaciones ================= */
 
 function apply(next: Flow[]) {
@@ -228,6 +238,33 @@ export function setDocLink(id: string, docKey: string, url: string | null) {
     return { ...f, links };
   });
   persist(() => remoteSetDocLink(id, docKey, url));
+}
+
+/* ================= material de apoyo ================= */
+
+function addMaterial(flowId: string, m: Material) {
+  updateFlow(flowId, (f) => ({ ...f, materials: [...(f.materials ?? []), m] }));
+}
+
+export function addLinkMaterial(flowId: string, title: string, url: string) {
+  const m: Material = { id: newId(), kind: "link", title, url, createdAt: Date.now() };
+  addMaterial(flowId, m);
+  persist(() => remoteAddLink(flowId, m.id, title, url));
+}
+
+/** Registra un archivo ya subido al Blob (ver MaterialPanel). */
+export function addFileMaterial(
+  flowId: string,
+  file: { title: string; url: string; size: number; contentType: string },
+) {
+  const m: Material = { id: newId(), kind: "file", ...file, createdAt: Date.now() };
+  addMaterial(flowId, m);
+  persist(() => remoteAddFile(flowId, m.id, file));
+}
+
+export function removeMaterial(flowId: string, id: string) {
+  updateFlow(flowId, (f) => ({ ...f, materials: (f.materials ?? []).filter((m) => m.id !== id) }));
+  persist(() => remoteDeleteMaterial(flowId, id));
 }
 
 /** Estado de un documento ("empty" = vacío, se guarda quitando la clave). */

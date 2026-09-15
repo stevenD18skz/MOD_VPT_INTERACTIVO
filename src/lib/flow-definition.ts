@@ -27,7 +27,25 @@ export interface Flow {
   links?: Record<string, string>;
   /** Estado de cada documento, por nombre; si falta, el documento está "empty". */
   docs?: Record<string, DocStatus>;
+  /** Material de apoyo propio de esta automatización (manuales, guías, enlaces…). */
+  materials?: Material[];
 }
+
+export interface Material {
+  id: string;
+  kind: "file" | "link";
+  title: string;
+  /** Enlace externo, o URL del archivo en el Blob privado (se descarga vía /api/material/[id]). */
+  url: string;
+  size?: number;
+  contentType?: string;
+  createdAt: number;
+}
+
+export const MAX_MATERIAL_BYTES = 50 * 1024 * 1024;
+
+/** Tipos que el navegador puede mostrar sin riesgo; el resto se descarga. */
+export const INLINE_MATERIAL_TYPES = /^(application\/pdf|image\/(png|jpe?g|gif|webp)|text\/plain)$/;
 
 /* ================= geometry ================= */
 export const W = 8140;
