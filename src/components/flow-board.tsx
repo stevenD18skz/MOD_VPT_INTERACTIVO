@@ -34,16 +34,20 @@ import {
   type FlowNode,
   type NodeState,
 } from "@/lib/flow-definition";
-import { setDocLink, setNodeNote, setNodeStatus, useFlows, type Flow } from "@/lib/flow-store";
+import { setDocLink, setNodeNote, setNodeStatus, useFlows, useStoreMode, type Flow } from "@/lib/flow-store";
+import { OfflineNotice, SyncBadge } from "./sync-badge";
 
 export function FlowBoard({ id }: { id: string }) {
   const flows = useFlows();
-  if (flows === null) return <div className={styles.center}>Cargando…</div>;
+  const mode = useStoreMode();
+  if (flows === null) {
+    return <div className={styles.center}>{mode === "offline" ? <OfflineNotice /> : "Cargando…"}</div>;
+  }
   const flow = flows.find((f) => f.id === id);
   if (!flow) {
     return (
       <div className={styles.center}>
-        <p>Este flujo no existe en este navegador.</p>
+        <p>Este flujo no existe o fue eliminado.</p>
         <Link href="/" className={styles.back}>
           ← Volver a la biblioteca
         </Link>
@@ -228,6 +232,7 @@ function Board({ flow }: { flow: Flow }) {
           ))}
         </div>
         <div className={styles.spacer} />
+        <SyncBadge />
         <span className={styles.progress}>
           {done} / {EDITABLE.length} listas · {docsLinked} / {DOC_KEYS.length} docs con enlace
         </span>

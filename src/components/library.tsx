@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { EDITABLE, PHASES, STATUSES, summarize } from "@/lib/flow-definition";
-import { createFlow, deleteFlow, updateFlowInfo, useFlows, type Flow } from "@/lib/flow-store";
+import { createFlow, deleteFlow, updateFlowInfo, useFlows, useStoreMode, type Flow } from "@/lib/flow-store";
+import { OfflineNotice, SyncBadge } from "@/components/sync-badge";
 
 export function Library() {
   const flows = useFlows();
+  const mode = useStoreMode();
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
@@ -29,12 +31,16 @@ export function Library() {
             Cada automatización sigue el mismo flujo ({PHASES.map((p) => p.n).join(" → ")}) con{" "}
             {EDITABLE.length} pasos. Abre un flujo para marcar el estado de cada paso y dejar notas.
           </p>
+          <div className="mt-2 min-h-4">
+            <SyncBadge />
+          </div>
         </div>
         {!creating && (
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="cursor-pointer rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            disabled={flows === null}
+            className="cursor-pointer rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             + Nuevo flujo
           </button>
@@ -52,7 +58,9 @@ export function Library() {
         </div>
       )}
 
-      {visible === undefined ? (
+      {mode === "offline" ? (
+        <OfflineNotice />
+      ) : visible === undefined ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
           {[0, 1, 2].map((i) => (
             <li key={i} className="h-52 animate-pulse rounded-xl border border-line bg-chrome" />

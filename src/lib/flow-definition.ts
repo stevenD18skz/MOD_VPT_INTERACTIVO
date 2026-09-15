@@ -16,6 +16,17 @@ export interface NodeState {
   n?: string;
 }
 
+export interface Flow {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+  nodes: Record<string, NodeState>;
+  /** Enlace de cada documento, por nombre del documento (ver DOC_KEYS). */
+  links?: Record<string, string>;
+}
+
 /* ================= geometry ================= */
 export const W = 8140;
 export const H = 3150;
