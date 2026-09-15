@@ -1,7 +1,7 @@
 // Acceso a Turso (libSQL). Solo se usa en el servidor (Route Handlers y Server Actions).
 
 import { createClient, type Client, type Row } from "@libsql/client";
-import type { Flow, NodeState } from "./flow-definition";
+import type { DocStatus, Flow, NodeState } from "./flow-definition";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   id          TEXT PRIMARY KEY,
@@ -10,7 +10,8 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
   nodes       TEXT NOT NULL DEFAULT '{}',
-  links       TEXT NOT NULL DEFAULT '{}'
+  links       TEXT NOT NULL DEFAULT '{}',
+  doc_status  TEXT NOT NULL DEFAULT '{}'
 )`;
 
 let client: Client | null = null;
@@ -20,7 +21,21 @@ export function isDbConfigured() {
   return Boolean(process.env.TURSO_DATABASE_URL);
 }
 
-/** Cliente perezoso: no se crea en el build y crea la tabla la primera vez. */
+/** Crea la tabla y agrega columnas nuevas a bases creadas con versiones anteriores. */
+async function migrate(c: Client) {
+  await c.execute(SCHEMA);
+  const cols = await c.execute("PRAGMA table_info(flows)");
+  if (!cols.rows.some((r) => r.name === "doc_status")) {
+    try {
+      await c.execute("ALTER TABLE flows ADD COLUMN doc_status TEXT NOT NULL DEFAULT '{}'");
+    } catch (e) {
+      // Otra instancia pudo agregarla al mismo tiempo.
+      if (!String(e).includes("duplicate column")) throw e;
+    }
+  }
+}
+
+/** Cliente perezoso: no se crea en el build y prepara la tabla la primera vez. */
 async function db(): Promise<Client> {
   if (!isDbConfigured()) throw new Error("Turso no está configurado (falta TURSO_DATABASE_URL).");
   if (!client) {
@@ -29,14 +44,11 @@ async function db(): Promise<Client> {
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
     client = c;
-    ready = c.execute(SCHEMA).then(
-      () => undefined,
-      (e) => {
-        client = null;
-        ready = null;
-        throw e;
-      },
-    );
+    ready = migrate(c).catch((e) => {
+      client = null;
+      ready = null;
+      throw e;
+    });
   }
   await ready;
   return client!;
@@ -59,6 +71,7 @@ function toFlow(r: Row): Flow {
     updatedAt: Number(r.updated_at),
     nodes: parseJson<Record<string, NodeState>>(r.nodes),
     links: parseJson<Record<string, string>>(r.links),
+    docs: parseJson<Record<string, DocStatus>>(r.doc_status),
   };
 }
 
@@ -72,8 +85,8 @@ export async function insertFlows(flows: Flow[]) {
   if (!flows.length) return;
   await (await db()).batch(
     flows.map((f) => ({
-      sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         f.id,
         f.name,
@@ -82,6 +95,7 @@ export async function insertFlows(flows: Flow[]) {
         f.updatedAt,
         JSON.stringify(f.nodes),
         JSON.stringify(f.links ?? {}),
+        JSON.stringify(f.docs ?? {}),
       ],
     })),
     "write",
@@ -115,17 +129,27 @@ export async function patchNode(id: string, nodeId: string, patch: NodeState) {
   });
 }
 
-export async function setDocLink(id: string, docKey: string, url: string | null) {
-  const path = jsonPath(docKey);
+/** Asigna (o quita, con `null`) una clave de un objeto JSON de la fila. */
+async function setJsonKey(column: "links" | "doc_status", id: string, key: string, value: string | null) {
+  const path = jsonPath(key);
   await (await db()).execute(
-    url
+    value
       ? {
-          sql: "UPDATE flows SET links = json_set(links, ?, ?), updated_at = ? WHERE id = ?",
-          args: [path, url, Date.now(), id],
+          sql: `UPDATE flows SET ${column} = json_set(${column}, ?, ?), updated_at = ? WHERE id = ?`,
+          args: [path, value, Date.now(), id],
         }
       : {
-          sql: "UPDATE flows SET links = json_remove(links, ?), updated_at = ? WHERE id = ?",
+          sql: `UPDATE flows SET ${column} = json_remove(${column}, ?), updated_at = ? WHERE id = ?`,
           args: [path, Date.now(), id],
         },
   );
+}
+
+export async function setDocLink(id: string, docKey: string, url: string | null) {
+  await setJsonKey("links", id, docKey, url);
+}
+
+/** "empty" es el estado por defecto, así que se guarda quitando la clave. */
+export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
+  await setJsonKey("doc_status", id, docKey, status === "empty" ? null : status);
 }

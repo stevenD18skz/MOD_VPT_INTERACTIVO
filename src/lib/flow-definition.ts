@@ -25,6 +25,8 @@ export interface Flow {
   nodes: Record<string, NodeState>;
   /** Enlace de cada documento, por nombre del documento (ver DOC_KEYS). */
   links?: Record<string, string>;
+  /** Estado de cada documento, por nombre; si falta, el documento está "empty". */
+  docs?: Record<string, DocStatus>;
 }
 
 /* ================= geometry ================= */
@@ -301,6 +303,26 @@ export const ARTIFACTS = NODES.filter((n) => n.t === "d" || n.t === "b");
  */
 export const DOC_KEYS = [...new Set(ARTIFACTS.map((n) => n.l))];
 
+export type DocStatus = "empty" | "prog" | "done";
+
+export const DOC_STATUSES: { key: DocStatus; label: string }[] = [
+  { key: "empty", label: "Vacío" },
+  { key: "prog", label: "En progreso" },
+  { key: "done", label: "Completo" },
+];
+
+/**
+ * Documentos agrupados por la fase del diagrama donde aparecen, en orden del flujo.
+ * Un documento usado en dos fases (p. ej. "Inventario de la célula") sale en ambas.
+ */
+export const PHASE_DOCS = PHASES.map((p) => {
+  const seen = new Map<string, FlowNode>();
+  for (const n of [...ARTIFACTS].sort((a, b) => a.x - b.x)) {
+    if (phaseOf(n.x) === p.n && !seen.has(n.l)) seen.set(n.l, n);
+  }
+  return { phase: p.n, docs: [...seen].map(([key, node]) => ({ key, node })) };
+});
+
 export function docsForStep(stepId: string): FlowNode[] {
   return ASSOCIATIONS.filter(([, s]) => s === stepId).map(([a]) => BY_ID[a]);
 }
@@ -369,7 +391,7 @@ export function phaseOf(x: number): string {
 }
 
 /** Resumen de avance de un flujo: conteo por estado, avance por fase y documentos enlazados. */
-export function summarize(nodes: Record<string, NodeState>, links: Record<string, string> = {}) {
+export function summarize({ nodes, links = {}, docs: docStatus = {} }: Pick<Flow, "nodes" | "links" | "docs">) {
   const counts: Record<Status, number> = { todo: 0, prog: 0, test: 0, done: 0 };
   const phases = PHASES.map((p) => ({ name: p.n, total: 0, done: 0 }));
   for (const n of EDITABLE) {
@@ -382,6 +404,11 @@ export function summarize(nodes: Record<string, NodeState>, links: Record<string
     }
   }
   const current = phases.find((p) => p.done < p.total)?.name ?? null;
-  const docs = { linked: DOC_KEYS.filter((k) => links[k]).length, total: DOC_KEYS.length };
+  const docs = {
+    linked: DOC_KEYS.filter((k) => links[k]).length,
+    done: DOC_KEYS.filter((k) => docStatus[k] === "done").length,
+    prog: DOC_KEYS.filter((k) => docStatus[k] === "prog").length,
+    total: DOC_KEYS.length,
+  };
   return { counts, total: EDITABLE.length, phases, current, docs };
 }

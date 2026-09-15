@@ -4,12 +4,13 @@
 // - Sin Turso ("local"): todo se guarda en localStorage, solo en este navegador.
 
 import { useSyncExternalStore } from "react";
-import type { Flow, Status } from "./flow-definition";
+import type { DocStatus, Flow, Status } from "./flow-definition";
 import {
   createFlow as remoteCreate,
   deleteFlow as remoteDelete,
   importFlows as remoteImport,
   setDocLink as remoteSetDocLink,
+  setDocStatus as remoteSetDocStatus,
   setNodeNote as remoteSetNote,
   setNodeStatus as remoteSetStatus,
   updateFlowInfo as remoteUpdateInfo,
@@ -227,4 +228,15 @@ export function setDocLink(id: string, docKey: string, url: string | null) {
     return { ...f, links };
   });
   persist(() => remoteSetDocLink(id, docKey, url));
+}
+
+/** Estado de un documento ("empty" = vacío, se guarda quitando la clave). */
+export function setDocStatus(id: string, docKey: string, status: DocStatus) {
+  updateFlow(id, (f) => {
+    const docs = { ...f.docs };
+    if (status === "empty") delete docs[docKey];
+    else docs[docKey] = status;
+    return { ...f, docs };
+  });
+  persist(() => remoteSetDocStatus(id, docKey, status));
 }

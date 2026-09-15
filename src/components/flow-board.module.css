@@ -112,6 +112,9 @@
   position: relative;
   background: var(--bg);
   cursor: grab;
+  /* Arrastrar para moverse no debe seleccionar el texto del diagrama. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .panning {
   cursor: grabbing;
@@ -580,6 +583,352 @@
 }
 .docRow .ok {
   white-space: nowrap;
+}
+
+/* ---------- estado de documentos ---------- */
+.gap {
+  height: 12px;
+}
+.docsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.docsBtn[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--chrome-2));
+}
+.docsBtnDone {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--done-fill);
+  color: var(--done-line);
+}
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--chrome-2);
+  border: 1px solid var(--line);
+}
+.segBtn {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.segBtn:hover {
+  color: var(--ink);
+}
+.segBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.segBtn[aria-checked="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.segBtn[aria-checked="true"][data-ds="empty"] {
+  background: var(--chrome);
+  border-color: var(--line);
+}
+.segBtn[aria-checked="true"][data-ds="prog"] {
+  background: var(--prog-fill);
+  border-color: var(--prog-line);
+}
+.segBtn[aria-checked="true"][data-ds="done"] {
+  background: var(--done-fill);
+  border-color: var(--done-line);
+}
+.dsPill {
+  flex: none;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--doc-line);
+  background: var(--chrome);
+  color: var(--ink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dsPill[data-ds="prog"] {
+  background: var(--prog-fill);
+  border-color: var(--prog-line);
+  color: var(--ink);
+}
+.dsPill[data-ds="done"] {
+  background: var(--done-fill);
+  border-color: var(--done-line);
+  color: var(--ink);
+}
+
+/* ---------- panel lateral de documentos ---------- */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(420px, 100vw);
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--chrome);
+  border-left: 1px solid var(--line);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.18);
+  animation: drawerIn 0.18s ease-out;
+}
+@keyframes drawerIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    animation: none;
+  }
+}
+.drawerHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 12px;
+}
+.drawerTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+.drawerSub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.iconBtn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--chrome-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.iconBtn:hover {
+  border-color: var(--accent);
+}
+.drawerMeter {
+  display: flex;
+  height: 6px;
+  margin: 0 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--chrome-2);
+}
+.drawerMeter span[data-ds="done"] {
+  background: var(--done-line);
+}
+.drawerMeter span[data-ds="prog"] {
+  background: var(--prog-line);
+}
+.drawerLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 18px 0;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.drawerLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.drawerLegend b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.drawerLegend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--doc-line);
+  background: var(--chrome);
+}
+.drawerLegend i[data-ds="prog"] {
+  background: var(--prog-line);
+  border-color: var(--prog-line);
+}
+.drawerLegend i[data-ds="done"] {
+  background: var(--done-line);
+  border-color: var(--done-line);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--chrome-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--accent);
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 18px 24px;
+}
+.phaseGroup {
+  margin-top: 12px;
+}
+.phaseHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  padding: 6px 0;
+  background: var(--chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.phaseCount {
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.dlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dcard {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--doc-line);
+  background: var(--chrome);
+}
+.dcard[data-ds="prog"] {
+  border-left-color: var(--prog-line);
+}
+.dcard[data-ds="done"] {
+  border-left-color: var(--done-line);
+}
+.dcardTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.dicon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--chrome-2);
+  color: var(--ink-soft);
+}
+.dmain {
+  flex: 1;
+  min-width: 0;
+}
+.dname {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.dused {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dgo {
+  flex: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--chrome-2);
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dgo:hover {
+  border-color: var(--accent);
+}
+.dactions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+  font-size: 11.5px;
+}
+.drawerEmpty {
+  margin: 28px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-soft);
 }
 
 /* ---------- estados vacíos ---------- */

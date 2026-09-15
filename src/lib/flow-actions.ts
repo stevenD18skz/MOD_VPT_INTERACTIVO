@@ -6,9 +6,11 @@
 import * as db from "./db";
 import {
   DOC_KEYS,
+  DOC_STATUSES,
   EDITABLE,
   STATUSES,
   normalizeUrl,
+  type DocStatus,
   type Flow,
   type NodeState,
   type Status,
@@ -17,6 +19,7 @@ import {
 const NODE_IDS = new Set(EDITABLE.map((n) => n.id));
 const DOC_SET = new Set(DOC_KEYS);
 const STATUS_SET = new Set<string>(STATUSES.map((s) => s.key));
+const DOC_STATUS_SET = new Set<string>(DOC_STATUSES.map((s) => s.key));
 const MAX_NAME = 200;
 const MAX_DESC = 2000;
 const MAX_NOTE = 20000;
@@ -52,6 +55,17 @@ function cleanLinks(raw: unknown): Record<string, string> {
   return out;
 }
 
+function cleanDocs(raw: unknown): Record<string, DocStatus> {
+  const out: Record<string, DocStatus> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (DOC_SET.has(key) && typeof v === "string" && DOC_STATUS_SET.has(v) && v !== "empty") {
+      out[key] = v as DocStatus;
+    }
+  }
+  return out;
+}
+
 /** Sube a la base de datos los flujos que existían solo en el navegador. */
 export async function importFlows(flows: Flow[]) {
   check(Array.isArray(flows) && flows.length <= 500);
@@ -66,6 +80,7 @@ export async function importFlows(flows: Flow[]) {
       updatedAt: Number.isFinite(f.updatedAt) ? f.updatedAt : now,
       nodes: cleanNodes(f.nodes),
       links: cleanLinks(f.links),
+      docs: cleanDocs(f.docs),
     };
   });
   await db.insertFlows(clean);
@@ -104,4 +119,9 @@ export async function setDocLink(id: string, docKey: string, url: string | null)
   const clean = url === null ? null : normalizeUrl(url);
   check(url === null || clean);
   await db.setDocLink(id, docKey, clean);
+}
+
+export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
+  check(isId(id) && DOC_SET.has(docKey) && DOC_STATUS_SET.has(status));
+  await db.setDocStatus(id, docKey, status);
 }

@@ -22,6 +22,8 @@ import {
   PHASES,
   POOL_W,
   STATUSES,
+  DOC_STATUSES,
+  PHASE_DOCS,
   W,
   dims,
   docsForStep,
@@ -31,10 +33,19 @@ import {
   phaseOf,
   route,
   wrapWords,
+  type DocStatus,
   type FlowNode,
   type NodeState,
 } from "@/lib/flow-definition";
-import { setDocLink, setNodeNote, setNodeStatus, useFlows, useStoreMode, type Flow } from "@/lib/flow-store";
+import {
+  setDocLink,
+  setDocStatus,
+  setNodeNote,
+  setNodeStatus,
+  useFlows,
+  useStoreMode,
+  type Flow,
+} from "@/lib/flow-store";
 import { OfflineNotice, SyncBadge } from "./sync-badge";
 
 export function FlowBoard({ id }: { id: string }) {
@@ -71,6 +82,7 @@ function Board({ flow }: { flow: Flow }) {
   const [zoom, setZoom] = useState(100);
   const [panning, setPanning] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   /* ---------- popover placement ---------- */
   const place = useCallback(() => {
@@ -191,12 +203,36 @@ function Board({ flow }: { flow: Flow }) {
     return () => ro.disconnect();
   }, [openId, place]);
 
+  // Escape cierra el panel de documentos, pero solo si no hay un popover abierto encima.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented && !openIdRef.current) setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
+
   const links = flow.links ?? NO_LINKS;
+  const docStatus = flow.docs ?? NO_DOCS;
   const linked = useMemo(() => new Set(Object.keys(links)), [links]);
   const done = EDITABLE.filter((n) => flow.nodes[n.id]?.s === "done").length;
   const docsLinked = DOC_KEYS.filter((k) => links[k]).length;
+  const docsDone = DOC_KEYS.filter((k) => docStatus[k] === "done").length;
   const openNode = openId ? BY_ID[openId] : null;
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
+
+  /** Lleva el lienzo hasta un nodo, lo centra y abre su popover. */
+  const focusNode = (id: string) => {
+    const vp = vpRef.current;
+    const n = BY_ID[id];
+    if (!vp || !n) return;
+    const s = Math.max(scaleRef.current, 0.9);
+    if (s !== scaleRef.current) applyScale(s);
+    vp.scrollTo({ left: n.x * s - vp.clientWidth / 2, top: n.y * s - vp.clientHeight / 2, behavior: "smooth" });
+    setDrawerOpen(false);
+    setOpenId(id);
+  };
 
   return (
     <div className={styles.root}>
@@ -234,8 +270,20 @@ function Board({ flow }: { flow: Flow }) {
         <div className={styles.spacer} />
         <SyncBadge />
         <span className={styles.progress}>
-          {done} / {EDITABLE.length} listas · {docsLinked} / {DOC_KEYS.length} docs con enlace
+          {done} / {EDITABLE.length} listas
         </span>
+        <button
+          type="button"
+          className={`${styles.tb} ${styles.docsBtn}`}
+          aria-expanded={drawerOpen}
+          aria-controls="docs-drawer"
+          onClick={() => setDrawerOpen((v) => !v)}
+          title="Ver y gestionar todos los documentos del flujo"
+        >
+          <DocGlyph />
+          {docsLinked} / {DOC_KEYS.length} docs con enlace
+          <span className={styles.docsBtnDone}>{docsDone} completos</span>
+        </button>
       </header>
 
       <div
@@ -270,7 +318,7 @@ function Board({ flow }: { flow: Flow }) {
         <div ref={sizerRef} className={styles.sizer}>
           <div ref={stageRef} className={styles.stage} style={{ width: W, height: H }}>
             <div className={styles.paper} />
-            <Diagram linked={linked} />
+            <Diagram linked={linked} docStatus={docStatus} />
             {EDITABLE.map((n) => (
               <StepNode
                 key={n.id}
@@ -312,6 +360,7 @@ function Board({ flow }: { flow: Flow }) {
               flowId={flow.id}
               node={openNode}
               url={links[openNode.l]}
+              status={docStatus[openNode.l] ?? "empty"}
               onClose={() => setOpenId(null)}
             />
           ) : (
@@ -321,10 +370,21 @@ function Board({ flow }: { flow: Flow }) {
               node={openNode}
               state={flow.nodes[openNode.id] ?? {}}
               links={links}
+              docStatus={docStatus}
               onClose={() => setOpenId(null)}
             />
           )}
         </div>
+      )}
+
+      {drawerOpen && (
+        <DocsDrawer
+          flowId={flow.id}
+          links={links}
+          docStatus={docStatus}
+          onClose={() => setDrawerOpen(false)}
+          onGo={focusNode}
+        />
       )}
     </div>
   );
@@ -374,12 +434,14 @@ function StepEditor({
   node,
   state,
   links,
+  docStatus,
   onClose,
 }: {
   flowId: string;
   node: FlowNode;
   state: NodeState;
   links: Record<string, string>;
+  docStatus: Record<string, DocStatus>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(state.n ?? "");
@@ -435,7 +497,13 @@ function StepEditor({
           <p className={styles.lbl}>Documentos</p>
           <div className={styles.docs}>
             {docs.map((d) => (
-              <DocLinkRow key={d.id} flowId={flowId} doc={d} url={links[d.l]} />
+              <DocLinkRow
+                key={d.id}
+                flowId={flowId}
+                doc={d}
+                url={links[d.l]}
+                status={docStatus[d.l] ?? "empty"}
+              />
             ))}
           </div>
         </>
@@ -479,6 +547,246 @@ function StepEditor({
 
 /* ================= documentos con enlace ================= */
 const NO_LINKS: Record<string, string> = {};
+const NO_DOCS: Record<string, DocStatus> = {};
+
+function DocGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path d="M4 1.5h5.5l3 3v10h-8.5z" strokeLinejoin="round" />
+      <path d="M9.5 1.5v3h3M6 8.5h4.5M6 11h4.5" />
+    </svg>
+  );
+}
+
+function DbGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <ellipse cx="8" cy="3.5" rx="5" ry="2" />
+      <path d="M3 3.5v9c0 1.1 2.2 2 5 2s5-.9 5-2v-9M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" />
+    </svg>
+  );
+}
+
+/** Selector de estado de un documento (Vacío / En progreso / Completo). */
+function DocStatusSeg({ value, onChange }: { value: DocStatus; onChange: (s: DocStatus) => void }) {
+  return (
+    <div className={styles.seg} role="radiogroup" aria-label="Estado del documento">
+      {DOC_STATUSES.map((s) => (
+        <button
+          key={s.key}
+          type="button"
+          role="radio"
+          aria-checked={value === s.key}
+          data-ds={s.key}
+          className={styles.segBtn}
+          onClick={() => value !== s.key && onChange(s.key)}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DRAWER_FILTERS = [
+  { key: "all", label: "Todos" },
+  { key: "pending", label: "Pendientes" },
+  { key: "nolink", label: "Sin enlace" },
+] as const;
+type DrawerFilter = (typeof DRAWER_FILTERS)[number]["key"];
+
+/** Panel lateral con todos los documentos del flujo, agrupados por fase. */
+function DocsDrawer({
+  flowId,
+  links,
+  docStatus,
+  onClose,
+  onGo,
+}: {
+  flowId: string;
+  links: Record<string, string>;
+  docStatus: Record<string, DocStatus>;
+  onClose: () => void;
+  onGo: (nodeId: string) => void;
+}) {
+  const [filter, setFilter] = useState<DrawerFilter>("all");
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => closeRef.current?.focus(), []);
+
+  const statusOf = (key: string) => docStatus[key] ?? "empty";
+  const count = (s: DocStatus) => DOC_KEYS.filter((k) => statusOf(k) === s).length;
+  const total = DOC_KEYS.length;
+  const matches = (key: string) =>
+    filter === "all" || (filter === "pending" ? statusOf(key) !== "done" : !links[key]);
+  const groups = PHASE_DOCS.map((g) => ({ ...g, shown: g.docs.filter((d) => matches(d.key)) }));
+
+  return (
+    <aside id="docs-drawer" className={styles.drawer} aria-label="Documentos del flujo">
+      <header className={styles.drawerHead}>
+        <div>
+          <h2 className={styles.drawerTitle}>Documentos del flujo</h2>
+          <p className={styles.drawerSub}>
+            {count("done")} de {total} completos · {DOC_KEYS.filter((k) => links[k]).length} con enlace
+          </p>
+        </div>
+        <button
+          ref={closeRef}
+          type="button"
+          className={styles.iconBtn}
+          onClick={onClose}
+          aria-label="Cerrar panel de documentos"
+        >
+          ✕
+        </button>
+      </header>
+      <div className={styles.drawerMeter} aria-hidden>
+        <span data-ds="done" style={{ width: `${(count("done") / total) * 100}%` }} />
+        <span data-ds="prog" style={{ width: `${(count("prog") / total) * 100}%` }} />
+      </div>
+      <div className={styles.drawerLegend}>
+        {DOC_STATUSES.map((s) => (
+          <span key={s.key}>
+            <i data-ds={s.key} /> {s.label} <b>{count(s.key)}</b>
+          </span>
+        ))}
+      </div>
+      <div className={styles.chips} role="group" aria-label="Filtrar documentos">
+        {DRAWER_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            className={styles.chip}
+            aria-pressed={filter === f.key}
+            onClick={() => setFilter(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className={styles.drawerBody}>
+        {groups.map(
+          (g) =>
+            g.shown.length > 0 && (
+              <section key={g.phase} className={styles.phaseGroup}>
+                <h3 className={styles.phaseHead}>
+                  <span>{g.phase}</span>
+                  <span className={styles.phaseCount}>
+                    {g.docs.filter((d) => statusOf(d.key) === "done").length}/{g.docs.length} completos
+                  </span>
+                </h3>
+                <ul className={styles.dlist}>
+                  {g.shown.map((d) => (
+                    <DrawerDoc
+                      key={d.key}
+                      flowId={flowId}
+                      docKey={d.key}
+                      node={d.node}
+                      url={links[d.key]}
+                      status={statusOf(d.key)}
+                      onGo={onGo}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ),
+        )}
+        {groups.every((g) => g.shown.length === 0) && (
+          <p className={styles.drawerEmpty}>
+            {filter === "pending"
+              ? "¡Todos los documentos están completos!"
+              : "Todos los documentos tienen enlace."}
+          </p>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function DrawerDoc({
+  flowId,
+  docKey,
+  node,
+  url,
+  status,
+  onGo,
+}: {
+  flowId: string;
+  docKey: string;
+  node: FlowNode;
+  url: string | undefined;
+  status: DocStatus;
+  onGo: (nodeId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [flash, setFlash] = useFlash();
+  const phase = phaseOf(node.x);
+  const steps = stepsForDoc(docKey).filter((s) => phaseOf(s.x) === phase);
+
+  return (
+    <li className={styles.dcard} data-ds={status}>
+      <div className={styles.dcardTop}>
+        <span className={styles.dicon}>{node.t === "d" ? <DocGlyph /> : <DbGlyph />}</span>
+        <div className={styles.dmain}>
+          <p className={styles.dname}>{docKey}</p>
+          {steps.length > 0 && <p className={styles.dused}>{steps.map((s) => s.l).join(" · ")}</p>}
+        </div>
+        <button
+          type="button"
+          className={styles.dgo}
+          onClick={() => onGo(node.id)}
+          title="Ver este documento en el diagrama"
+        >
+          Ir →
+        </button>
+      </div>
+      <DocStatusSeg
+        value={status}
+        onChange={(s) => {
+          setDocStatus(flowId, docKey, s);
+          setFlash("Estado actualizado");
+        }}
+      />
+      <div className={styles.dactions}>
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer" className={styles.docOpen}>
+            Abrir ↗
+          </a>
+        )}
+        {!editing && (
+          <button type="button" className={styles.docAction} onClick={() => setEditing(true)}>
+            {url ? "Editar enlace" : "+ Agregar enlace"}
+          </button>
+        )}
+        <span className={styles.spacer} />
+        {flash && (
+          <span className={styles.ok} role="status">
+            ✓ {flash}
+          </span>
+        )}
+      </div>
+      {editing && (
+        <DocLinkForm
+          initial={url}
+          onSave={(u) => {
+            setDocLink(flowId, docKey, u);
+            setEditing(false);
+            setFlash(url ? "Enlace actualizado" : "Enlace guardado");
+          }}
+          onRemove={
+            url
+              ? () => {
+                  setDocLink(flowId, docKey, null);
+                  setEditing(false);
+                  setFlash("Enlace eliminado");
+                }
+              : undefined
+          }
+          onCancel={() => setEditing(false)}
+        />
+      )}
+    </li>
+  );
+}
 
 const isDoc = (n: FlowNode) => n.t === "d" || n.t === "b";
 
@@ -561,11 +869,13 @@ function DocPanel({
   flowId,
   node,
   url,
+  status,
   onClose,
 }: {
   flowId: string;
   node: FlowNode;
   url: string | undefined;
+  status: DocStatus;
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState(!url);
@@ -579,6 +889,15 @@ function DocPanel({
       <div className={styles.crumb}>
         {node.t === "d" ? "Documento" : "Sistema / repositorio"} · {phaseOf(node.x)}
       </div>
+      <p className={styles.lbl}>Estado</p>
+      <DocStatusSeg
+        value={status}
+        onChange={(s) => {
+          setDocStatus(flowId, node.l, s);
+          setFlash("Estado actualizado");
+        }}
+      />
+      <div className={styles.gap} />
       {steps.length > 0 && (
         <>
           <p className={styles.lbl}>Se usa en</p>
@@ -644,14 +963,36 @@ function DocPanel({
 }
 
 /** Fila de un documento dentro del popover de un paso. */
-function DocLinkRow({ flowId, doc, url }: { flowId: string; doc: FlowNode; url: string | undefined }) {
+function DocLinkRow({
+  flowId,
+  doc,
+  url,
+  status,
+}: {
+  flowId: string;
+  doc: FlowNode;
+  url: string | undefined;
+  status: DocStatus;
+}) {
   const [editing, setEditing] = useState(false);
   const [flash, setFlash] = useFlash();
+  const i = DOC_STATUSES.findIndex((s) => s.key === status);
+  const current = DOC_STATUSES[i];
+  const next = DOC_STATUSES[(i + 1) % DOC_STATUSES.length];
 
   return (
     <div className={styles.docItem}>
       <div className={styles.docRow}>
-        <span className={`${styles.docDot} ${url ? styles.docDotOn : ""}`} aria-hidden />
+        <button
+          type="button"
+          className={styles.dsPill}
+          data-ds={status}
+          onClick={() => setDocStatus(flowId, doc.l, next.key)}
+          title={`Estado: ${current.label}. Clic para marcar «${next.label}»`}
+          aria-label={`Estado de ${doc.l}: ${current.label}. Cambiar a ${next.label}`}
+        >
+          {current.label}
+        </button>
         <span className={styles.docName} title={doc.l}>
           {doc.l}
         </span>
@@ -779,7 +1120,19 @@ function DocLinkForm({
 /* ================= static diagram (lanes, phases, edges, artifacts) ================= */
 const soft = { fill: "var(--ink-soft)" };
 
-const Diagram = memo(function Diagram({ linked }: { linked: Set<string> }) {
+const DOC_COLORS: Record<DocStatus, { fill: string; stroke: string }> = {
+  empty: { fill: "var(--doc-fill)", stroke: "var(--doc-line)" },
+  prog: { fill: "var(--prog-fill)", stroke: "var(--prog-line)" },
+  done: { fill: "var(--done-fill)", stroke: "var(--done-line)" },
+};
+
+const Diagram = memo(function Diagram({
+  linked,
+  docStatus,
+}: {
+  linked: Set<string>;
+  docStatus: Record<string, DocStatus>;
+}) {
   const poolTop = LANES[0].y0;
   const poolBot = LANES[LANES.length - 1].y1;
   const headTop = 563;
@@ -930,10 +1283,11 @@ const Diagram = memo(function Diagram({ linked }: { linked: Set<string> }) {
           const lines = wrapWords(n.l, 16);
           const startY = y - 6 - (lines.length - 1) * 12;
           const isLinked = linked.has(n.l);
-          const artStyle = isLinked
-            ? { fill: "var(--link-fill)", stroke: "var(--accent)" }
-            : { fill: "var(--doc-fill)", stroke: "var(--doc-line)" };
-          const sw = isLinked ? 2.4 : 1.6;
+          const st = docStatus[n.l] ?? "empty";
+          // El color dice el estado; un documento vacío pero enlazado se ve azul.
+          const artStyle =
+            st === "empty" && isLinked ? { fill: "var(--link-fill)", stroke: "var(--accent)" } : DOC_COLORS[st];
+          const sw = st !== "empty" || isLinked ? 2.4 : 1.6;
           return (
             <g key={n.id}>
               {n.t === "d" ? (
@@ -951,6 +1305,16 @@ const Diagram = memo(function Diagram({ linked }: { linked: Set<string> }) {
                     strokeWidth={sw}
                   />
                 </>
+              )}
+              {st !== "empty" && (
+                <g>
+                  <circle cx={x + 2} cy={y + 2} r={9} style={{ fill: DOC_COLORS[st].stroke }} />
+                  {st === "done" ? (
+                    <path d={`M${x - 2.5},${y + 2} l3,3 l5,-6`} stroke="#fff" strokeWidth={2} fill="none" />
+                  ) : (
+                    <circle cx={x + 2} cy={y + 2} r={3} fill="#fff" />
+                  )}
+                </g>
               )}
               {lines.map((ln, i) => (
                 <text
