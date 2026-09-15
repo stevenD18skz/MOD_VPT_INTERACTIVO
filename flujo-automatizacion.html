@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flujo Automatización · Célula de Mejora Operativa</title>
+<style>
+  :root{
+    --bg:#f4f5f7;
+    --chrome:#ffffff;
+    --chrome-2:#f0f1f4;
+    --ink:#1d2430;
+    --ink-soft:#5b6575;
+    --line:#d5d9e0;
+    --paper:#ffffff;
+    --lane-head:#f7f8fa;
+    --lane-line:#9aa3af;
+    --phase-line:#b6bdc7;
+    --flow:#3f4753;
+    --doc-fill:#f2f2f2;
+    --doc-line:#9aa3af;
+    --accent:#2E75B6;
+
+    --todo-fill:#DEEBF7;   --todo-line:#2E75B6;  --todo-dot:#2E75B6;
+    --prog-fill:#FFF2CC;   --prog-line:#BF8F00;  --prog-dot:#D69B00;
+    --test-fill:#E9D9F7;   --test-line:#7030A0;  --test-dot:#7030A0;
+    --done-fill:#D9EAD3;   --done-line:#4C8B2B;  --done-dot:#4C8B2B;
+  }
+  :root:not([data-theme="light"]){
+    @media (prefers-color-scheme: dark){
+      --bg:#14171c; --chrome:#1c2027; --chrome-2:#232830; --ink:#e7eaef;
+      --ink-soft:#9aa4b2; --line:#333a45; --paper:#1a1e24; --lane-head:#22262e;
+      --lane-line:#4a5260; --phase-line:#3c434e; --flow:#9aa4b2;
+      --doc-fill:#272c34; --doc-line:#5a6270;
+      --todo-fill:#1e3348; --todo-line:#4f94d4;
+      --prog-fill:#3d3315; --prog-line:#d6a723;
+      --test-fill:#31204a; --test-line:#a06fd0;
+      --done-fill:#1f3a1c; --done-line:#63b13f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171c; --chrome:#1c2027; --chrome-2:#232830; --ink:#e7eaef;
+    --ink-soft:#9aa4b2; --line:#333a45; --paper:#1a1e24; --lane-head:#22262e;
+    --lane-line:#4a5260; --phase-line:#3c434e; --flow:#9aa4b2;
+    --doc-fill:#272c34; --doc-line:#5a6270;
+    --todo-fill:#1e3348; --todo-line:#4f94d4;
+    --prog-fill:#3d3315; --prog-line:#d6a723;
+    --test-fill:#31204a; --test-line:#a06fd0;
+    --done-fill:#1f3a1c; --done-line:#63b13f;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+
+  /* ---------- toolbar ---------- */
+  #bar{
+    flex:0 0 auto; display:flex; align-items:center; gap:14px;
+    padding:8px 14px; background:var(--chrome);
+    border-bottom:1px solid var(--line); flex-wrap:wrap;
+  }
+  #bar h1{font-size:14px;margin:0;font-weight:650;letter-spacing:.1px;white-space:nowrap}
+  #bar .sub{font-size:11.5px;color:var(--ink-soft);white-space:nowrap}
+  .grp{display:flex;align-items:center;gap:6px}
+  .spacer{flex:1 1 auto}
+  button.tb{
+    font:inherit; font-size:12px; padding:5px 10px; border-radius:7px;
+    border:1px solid var(--line); background:var(--chrome-2); color:var(--ink);
+    cursor:pointer; white-space:nowrap;
+  }
+  button.tb:hover{border-color:var(--accent)}
+  #zoomval{font-size:12px;color:var(--ink-soft);min-width:46px;text-align:center;font-variant-numeric:tabular-nums}
+  .legend{display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+  .lg{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-soft);white-space:nowrap}
+  .sw{width:11px;height:11px;border-radius:3px;border:1.5px solid}
+  .sw.todo{background:var(--todo-fill);border-color:var(--todo-line)}
+  .sw.prog{background:var(--prog-fill);border-color:var(--prog-line)}
+  .sw.test{background:var(--test-fill);border-color:var(--test-line)}
+  .sw.done{background:var(--done-fill);border-color:var(--done-line)}
+  #progress{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* ---------- canvas viewport ---------- */
+  #viewport{
+    flex:1 1 auto; overflow:auto; position:relative; background:var(--bg);
+    cursor:grab;
+  }
+  #viewport.panning{cursor:grabbing}
+  #stage{transform-origin:0 0; position:relative; will-change:transform}
+  #paper{position:absolute;inset:0;background:var(--paper)}
+  svg#wires{position:absolute;top:0;left:0;overflow:visible}
+
+  .node{
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    text-align:center; padding:7px 6px; border-radius:9px;
+    border:1.6px solid var(--todo-line); background:var(--todo-fill);
+    font-size:11.5px; line-height:1.18; color:#12202e; cursor:pointer;
+    overflow:hidden; user-select:none; transition:box-shadow .12s, transform .12s;
+  }
+  :root[data-theme="dark"] .node, :root:not([data-theme="light"]) .node{color:inherit}
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .node{color:#12202e} }
+  .node:hover{box-shadow:0 0 0 3px rgba(46,117,182,.22)}
+  .node.sel{box-shadow:0 0 0 3px rgba(46,117,182,.55)}
+  .node[data-st="prog"]{background:var(--prog-fill);border-color:var(--prog-line)}
+  .node[data-st="test"]{background:var(--test-fill);border-color:var(--test-line)}
+  .node[data-st="done"]{background:var(--done-fill);border-color:var(--done-line)}
+  .node .txt{max-height:100%;overflow:hidden}
+  .badge{position:absolute;top:4px;right:5px;width:8px;height:8px;border-radius:50%;background:var(--todo-dot)}
+  .node[data-st="prog"] .badge{background:var(--prog-dot)}
+  .node[data-st="test"] .badge{background:var(--test-dot)}
+  .node[data-st="done"] .badge{background:var(--done-dot)}
+  .noteflag{position:absolute;bottom:3px;right:5px;font-size:9px;opacity:.75}
+
+  /* ---------- popover ---------- */
+  #pop{
+    position:fixed; z-index:50; width:330px; display:none;
+    background:var(--chrome); border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 12px 34px rgba(0,0,0,.24); padding:13px; color:var(--ink);
+  }
+  #pop.on{display:block}
+  #pop .ttl{font-size:13px;font-weight:650;line-height:1.3;margin:0 0 3px}
+  #pop .crumb{font-size:10.5px;color:var(--ink-soft);margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px}
+  #pop .lbl{font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin:0 0 5px}
+  .states{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+  .st{
+    font:inherit;font-size:11.5px;padding:6px 8px;border-radius:7px;cursor:pointer;
+    border:1.5px solid var(--line);background:var(--chrome-2);color:var(--ink);text-align:center;
+  }
+  .st[aria-pressed="true"].todo{background:var(--todo-fill);border-color:var(--todo-line)}
+  .st[aria-pressed="true"].prog{background:var(--prog-fill);border-color:var(--prog-line)}
+  .st[aria-pressed="true"].test{background:var(--test-fill);border-color:var(--test-line)}
+  .st[aria-pressed="true"].done{background:var(--done-fill);border-color:var(--done-line)}
+  #pop textarea{
+    width:100%;min-height:110px;resize:vertical;font:inherit;font-size:12px;
+    padding:8px;border-radius:8px;border:1px solid var(--line);
+    background:var(--chrome-2);color:var(--ink);line-height:1.4;
+  }
+  #pop textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  #pop .foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;gap:8px}
+  #saved{font-size:11px;color:var(--ink-soft)}
+  #pop .close{
+    font:inherit;font-size:12px;padding:5px 11px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--line);background:var(--chrome-2);color:var(--ink);
+  }
+  .links{margin-top:9px;display:flex;flex-direction:column;gap:4px}
+  .links a{font-size:11.5px;color:var(--accent);word-break:break-all;text-decoration:none}
+  .links a:hover{text-decoration:underline}
+  @media (max-width:520px){ #pop{width:calc(100vw - 24px)} }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="grp">
+    <h1>Flujo de Automatización</h1>
+    <span class="sub">Célula de Mejora Operativa · DC-1095</span>
+  </div>
+  <div class="grp">
+    <button class="tb" id="zout">−</button>
+    <span id="zoomval">100%</span>
+    <button class="tb" id="zin">+</button>
+    <button class="tb" id="zfit">Ajustar alto</button>
+  </div>
+  <div class="legend">
+    <span class="lg"><i class="sw todo"></i>TODO</span>
+    <span class="lg"><i class="sw prog"></i>In progress</span>
+    <span class="lg"><i class="sw test"></i>For test</span>
+    <span class="lg"><i class="sw done"></i>Done</span>
+  </div>
+  <div class="spacer"></div>
+  <span id="progress">—</span>
+</div>
+
+<div id="viewport">
+  <div id="stage">
+    <div id="paper"></div>
+    <svg id="wires"></svg>
+  </div>
+</div>
+
+<div id="pop" role="dialog" aria-label="Editar paso">
+  <p class="ttl" id="popttl"></p>
+  <div class="crumb" id="popcrumb"></div>
+  <p class="lbl">Estado</p>
+  <div class="states">
+    <button class="st todo" data-s="todo">TODO</button>
+    <button class="st prog" data-s="prog">In progress</button>
+    <button class="st test" data-s="test">For test</button>
+    <button class="st done" data-s="done">Done</button>
+  </div>
+  <p class="lbl">Comentarios y enlaces</p>
+  <textarea id="popnotes" placeholder="Notas, acuerdos, pendientes, enlaces (pega URLs y aparecen abajo)…"></textarea>
+  <div class="links" id="poplinks"></div>
+  <div class="foot">
+    <span id="saved"></span>
+    <button class="close" id="popclose">Cerrar</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ================= geometry ================= */
+const W = 8140, H = 3150;
+const TW = 160, TH = 105;   // task
+const GW = 52;              // gateway
+const ER = 26;              // event
+const KR = 28;              // timer
+const DW = 78, DH = 96;     // document
+const BW = 70, BH = 80;     // datastore
+
+const LANES = [
+  {n:"LÍDER SOLICITANTE VICEPRESIDENCIA FINANCIERA Y ADMINISTRATIVO", y0:60,   y1:563},
+  {n:"COORDINADOR, ANALISTA DE LA CÉLULA DE MEJORA OPERATIVA",        y0:563,  y1:1185},
+  {n:"INGENIERO DE PROCESOS",                                        y0:1185, y1:1462},
+  {n:"GERENTE DE OPERACIONES",                                       y0:1462, y1:1785},
+  {n:"LÍDER EXCELENCIA OPERACIONAL & AUTOMATIZACIONES",              y0:1785, y1:2156},
+  {n:"LÍDERES VICEPRESIDENCIA FINANCIERA Y ADMINISTRATIVO",          y0:2156, y1:2500},
+  {n:"CONTROL DE CAMBIOS",                                           y0:2500, y1:3090}
+];
+const PHASES = [
+  {n:"Análisis",   x0:112,  x1:3805},
+  {n:"Diseño",     x0:3805, x1:4268},
+  {n:"Desarrollo", x0:4268, x1:4680},
+  {n:"Pruebas",    x0:4680, x1:5700},
+  {n:"Despliegue", x0:5700, x1:8100}
+];
+const LANE_X0 = 30, LANE_X1 = 8100, POOL_W = 26, HEAD_W = 56;
+
+/* ================= nodes ================= */
+// t=task(editable) s=subprocess(editable) g=gateway p=parallel e=start f=end k=timer d=doc b=datastore
+const N = [
+  // ---- lane 1 : líder solicitante
+  {id:"e1",t:"e",x:168,y:265,l:"Necesidad de Mejora"},
+  {id:"g1",t:"g",x:298,y:262,l:"¿La iniciativa es de la Vicepresidencia Financiera y Administrativa?"},
+  {id:"s1",t:"s",x:298,y:453,l:"MN-095 Marco de Gobierno Automatización"},
+  {id:"f1",t:"f",x:497,y:453,l:"Fin"},
+  {id:"t1",t:"t",x:566,y:265,l:"Diligenciar Formato de Planteamiento de la Necesidad de Mejora"},
+  {id:"t2",t:"t",x:795,y:265,l:"Realizar la solicitud de mejora adjuntando el documento debidamente diligenciado"},
+  {id:"t3",t:"t",x:1258,y:265,l:"Complementar información requerida"},
+  {id:"d1",t:"d",x:566,y:112,l:"FT-769 A3 PLANTEAMIENTO DE LA NECESIDAD DE MEJORA"},
+  {id:"b1",t:"b",x:795,y:118,l:"Outlook / Buzón célula"},
+
+  // ---- lane 2 : coordinador / analista
+  {id:"t4",t:"t",x:1258,y:662,l:"Solicitar ajuste o información faltante"},
+  {id:"t5",t:"t",x:795,y:883,l:"Recepcionar solicitud"},
+  {id:"t6",t:"t",x:1040,y:883,l:"Validar integridad de la información recibida"},
+  {id:"g2",t:"g",x:1258,y:883,l:"¿Información completa?"},
+  {id:"t7",t:"t",x:1440,y:883,l:"Registrar iniciativa en el inventario de seguimiento"},
+  {id:"d2",t:"d",x:1440,y:1062,l:"Inventario Célula Operaciones"},
+  {id:"t8",t:"t",x:1640,y:883,l:"Analizar información de la iniciativa"},
+  {id:"t9",t:"t",x:1855,y:883,l:"Diligenciar Matriz de Definición de Impacto"},
+  {id:"d3",t:"d",x:1855,y:722,l:"FT-770 MATRIZ DE DEFINICIÓN DE IMPACTO INICIATIVAS"},
+  {id:"t10",t:"t",x:2060,y:883,l:"Obtener Clasificación de la iniciativa · Bajo impacto · Alto impacto"},
+  {id:"d4",t:"d",x:2060,y:722,l:"Resultado arrojado por la matriz de definición de impacto",grey:1},
+  {id:"t11",t:"t",x:2060,y:1077,l:"Preparar iniciativas para sesión de priorización"},
+
+  {id:"t12",t:"t",x:2675,y:878,l:"Actualizar estado de la iniciativa"},
+  {id:"d5",t:"d",x:2500,y:878,l:"Inventario de la célula"},
+  {id:"t13",t:"t",x:2891,y:878,l:"Notificar al líder solicitante que la iniciativa no fue priorizada"},
+  {id:"b2",t:"b",x:2891,y:722,l:"Outlook"},
+  {id:"f2",t:"f",x:3075,y:878,l:"Fin"},
+
+  {id:"t14",t:"t",x:3310,y:878,l:"Actualizar estado de la iniciativa"},
+  {id:"t15",t:"t",x:3600,y:878,l:"Realizar sesión de entendimiento con el líder del proceso (usuario ejecutante)"},
+
+  {id:"t16",t:"t",x:3984,y:878,l:"Construir VSM AS-IS y TO-BE"},
+  {id:"d6",t:"d",x:3984,y:722,l:"FT-772 ANÁLISIS & DISEÑO INICIATIVA VSM"},
+  {id:"t17",t:"t",x:4200,y:878,l:"Documentar Historia de Usuario"},
+  {id:"d7",t:"d",x:4200,y:722,l:"FT-773 HU CÉLULA OPERATIVA"},
+
+  {id:"t18",t:"t",x:4500,y:878,l:"Desarrollar solución en el aplicativo correspondiente"},
+  {id:"b3",t:"b",x:4500,y:722,l:"Stock Tecnológico Autorizado"},
+
+  {id:"t19",t:"t",x:4830,y:878,l:"Preparar casos y datos de prueba"},
+  {id:"d8",t:"d",x:4830,y:722,l:"FT-771 MATRIZ DE PRUEBAS_CERTIFICACIÓN"},
+  {id:"t20",t:"t",x:5060,y:878,l:"Ejecutar pruebas"},
+  {id:"t21",t:"t",x:5060,y:625,l:"Realizar las correcciones pertinentes"},
+  {id:"t22",t:"t",x:5290,y:878,l:"Registrar evidencia formal de pruebas"},
+  {id:"g3",t:"g",x:5455,y:878,l:"¿El resultado de todas las pruebas es exitoso?"},
+  {id:"t23",t:"t",x:5640,y:878,l:"Emitir certificado de pruebas"},
+  {id:"d9",t:"d",x:5640,y:1040,l:"FT-771 MATRIZ DE PRUEBAS_CERTIFICACIÓN"},
+
+  {id:"t24",t:"t",x:5953,y:878,l:"Solicitar aprobación de despliegue al comité de cambios"},
+  {id:"b4",t:"b",x:5953,y:722,l:"App Control de Cambios"},
+  {id:"t25",t:"t",x:6281,y:878,l:"Realizar las respectivas correcciones y crear un nuevo caso"},
+
+  {id:"t26",t:"t",x:6531,y:1063,l:"Realizar Despliegue"},
+  {id:"g4",t:"g",x:6759,y:1063,l:"¿El despliegue fue exitoso?"},
+  {id:"t27",t:"t",x:6759,y:900,l:"Realizar Correcciones requeridas"},
+  {id:"t28",t:"t",x:6978,y:1063,l:"Realizar el manual de la solución y el Manual de Usuario"},
+  {id:"p1",t:"p",x:7190,y:1063,l:"Paralelo"},
+  {id:"t29",t:"t",x:7330,y:781,l:"Realizar entrega formal con el líder del proceso / usuario final y generar el acta de entrega"},
+  {id:"d10",t:"d",x:7330,y:625,l:"FT-759 ACTA DE ENTREGA AUTOMATIZACIÓN"},
+  {id:"t30",t:"t",x:7510,y:781,l:"Actualizar el estado de la solución"},
+  {id:"d11",t:"d",x:7510,y:625,l:"Inventario de la célula"},
+  {id:"t31",t:"t",x:7690,y:781,l:"Cargar documentación en el repositorio documental de las soluciones"},
+  {id:"b5",t:"b",x:7690,y:628,l:"Sharepoint"},
+  {id:"t32",t:"t",x:7870,y:781,l:"Realizar el acompañamiento post-entrega con el usuario final"},
+  {id:"f3",t:"f",x:7995,y:781,l:"Fin"},
+  {id:"t33",t:"t",x:7320,y:1063,l:"Solicitar la publicación de la documentación"},
+  {id:"b6",t:"b",x:7490,y:1063,l:"Genial"},
+
+  // ---- lane 3 : ingeniero de procesos
+  {id:"t34",t:"t",x:7320,y:1330,l:"Publicar la documentación importada"},
+  {id:"f4",t:"f",x:7490,y:1330,l:"Fin"},
+
+  // ---- lane 4 : gerente de operaciones
+  {id:"t35",t:"t",x:2460,y:1605,l:"Priorizar las iniciativas presentadas.",hot:1},
+  {id:"g5",t:"g",x:2675,y:1605,l:"¿La solicitud fue priorizada?"},
+  {id:"t36",t:"t",x:2960,y:1605,l:"Definir frente de trabajo según clasificación de la iniciativa"},
+  {id:"g6",t:"g",x:3180,y:1605,l:"Clasificación de la Iniciativa"},
+  {id:"s2",t:"s",x:3400,y:1605,l:"MN-095 Marco de Gobierno Automatización"},
+  {id:"f5",t:"f",x:3570,y:1605,l:"Fin"},
+
+  // ---- lane 5 : excelencia operacional
+  {id:"k1",t:"k",x:2256,y:1953,l:"15 DÍAS"},
+  {id:"t37",t:"t",x:2460,y:1953,l:"Realizar sesión de alineación de iniciativas"},
+  {id:"d12",t:"d",x:2660,y:1878,l:"Backlog Automatizaciones"},
+  {id:"d13",t:"d",x:2660,y:2030,l:"Inventario de la célula"},
+
+  // ---- lane 6 : líderes VP
+  {id:"k2",t:"k",x:2060,y:2297,l:"Semanal"},
+  {id:"t38",t:"t",x:2256,y:2297,l:"Priorizar iniciativas"},
+
+  // ---- lane 7 : control de cambios
+  {id:"t39",t:"t",x:5953,y:2798,l:"Revisar la solicitud de despliegue"},
+  {id:"k3",t:"k",x:6120,y:2798,l:"2 Días hábiles"},
+  {id:"g7",t:"g",x:6281,y:2798,l:"¿Aprueba el despliegue?"},
+  {id:"t40",t:"t",x:6281,y:2630,l:"Rechazar solicitud de despliegue con novedades"},
+  {id:"t41",t:"t",x:6531,y:2798,l:"Notificar la aprobación de despliegue"},
+  {id:"d14",t:"d",x:6700,y:2798,l:"Acta de aprobación"}
+];
+const BY = {}; N.forEach(n=>BY[n.id]=n);
+
+function dims(n){
+  switch(n.t){
+    case "g": case "p": return {w:GW,h:GW};
+    case "e": case "f": return {w:ER*2,h:ER*2};
+    case "k": return {w:KR*2,h:KR*2};
+    case "d": return {w:DW,h:DH};
+    case "b": return {w:BW,h:BH};
+    default:  return {w:TW,h:TH};
+  }
+}
+function anc(id,side){
+  const n=BY[id], d=dims(n);
+  if(side==="r") return [n.x+d.w/2,n.y];
+  if(side==="l") return [n.x-d.w/2,n.y];
+  if(side==="t") return [n.x,n.y-d.h/2];
+  return [n.x,n.y+d.h/2];
+}
+
+/* ================= edges ================= */
+// [fromId, fromSide, toId, toSide, label?, via?]
+const E = [
+  ["e1","r","g1","l"],
+  ["g1","b","s1","t","No"],
+  ["s1","r","f1","l"],
+  ["g1","r","t1","l","Sí"],
+  ["t1","r","t2","l"],
+  ["t2","b","t5","t"],
+  ["t3","l","t2","r"],
+  ["t4","t","t3","b"],
+  ["g2","t","t4","b","No"],
+  ["t5","r","t6","l"],
+  ["t6","r","g2","l"],
+  ["g2","r","t7","l","Sí"],
+  ["t7","r","t8","l"],
+  ["t8","r","t9","l"],
+  ["t9","r","t10","l"],
+  ["t10","b","t11","t"],
+  ["t11","b","k2","t"],
+  ["k2","r","t38","l"],
+  ["t38","t","k1","b"],
+  ["k1","r","t37","l"],
+  ["t37","t","t35","b"],
+  ["t35","r","g5","l"],
+  ["g5","t","t12","b","No"],
+  ["g5","r","t36","l","Sí"],
+  ["t12","r","t13","l"],
+  ["t13","r","f2","l"],
+  ["t36","r","g6","l"],
+  ["g6","r","s2","l","Impacto Alto"],
+  ["s2","r","f5","l"],
+  ["g6","t","t14","b","Impacto Bajo"],
+  ["t14","r","t15","l"],
+  ["t15","r","t16","l"],
+  ["t16","r","t17","l"],
+  ["t17","r","t18","l"],
+  ["t18","r","t19","l"],
+  ["t19","r","t20","l"],
+  ["t21","b","t20","t"],
+  ["t20","r","t22","l"],
+  ["t22","r","g3","l"],
+  ["g3","t","t21","r","No",[[5455,625]]],
+  ["g3","r","t23","l","Sí"],
+  ["t23","r","t24","l"],
+  ["t24","b","t39","t"],
+  ["t39","r","k3","l"],
+  ["k3","r","g7","l"],
+  ["g7","t","t40","b","No"],
+  ["t40","t","t25","b"],
+  ["t25","l","t24","r"],
+  ["g7","r","t41","l","Sí"],
+  ["t41","t","t26","b"],
+  ["t26","r","g4","l"],
+  ["g4","t","t27","b","No"],
+  ["t27","l","t26","t",null,[[6531,900]]],
+  ["g4","r","t28","l","Sí"],
+  ["t28","r","p1","l"],
+  ["p1","t","t29","l","",[[7190,781]]],
+  ["p1","r","t33","l"],
+  ["t29","r","t30","l"],
+  ["t30","r","t31","l"],
+  ["t31","r","t32","l"],
+  ["t32","r","f3","l"],
+  ["t33","b","t34","t"],
+  ["t34","r","f4","l"]
+];
+// dotted artifact associations
+const A = [
+  ["d1","t1"],["b1","t2"],["d2","t7"],["d3","t9"],["d4","t10"],["d5","t12"],
+  ["b2","t13"],["d6","t16"],["d7","t17"],["b3","t18"],["d8","t19"],["d9","t23"],
+  ["b4","t24"],["d10","t29"],["d11","t30"],["b5","t31"],["b6","t33"],
+  ["d12","t37"],["d13","t37"],["d14","t41"]
+];
+
+function route(e){
+  const [a,as,b,bs,,via]=e;
+  const p0=anc(a,as), p1=anc(b,bs);
+  if(via&&via.length) return [p0,...via,p1];
+  const hz=(as==="r"||as==="l"), hzb=(bs==="r"||bs==="l");
+  if(hz&&hzb){
+    if(Math.abs(p0[1]-p1[1])<1.5) return [p0,p1];
+    const mx=(p0[0]+p1[0])/2; return [p0,[mx,p0[1]],[mx,p1[1]],p1];
+  }
+  if(!hz&&!hzb){
+    if(Math.abs(p0[0]-p1[0])<1.5) return [p0,p1];
+    const my=(p0[1]+p1[1])/2; return [p0,[p0[0],my],[p1[0],my],p1];
+  }
+  if(!hz&&hzb) return [p0,[p0[0],p1[1]],p1];
+  return [p0,[p1[0],p0[1]],p1];
+}
+
+/* ================= render static layers ================= */
+const NS="http://www.w3.org/2000/svg";
+const svg=document.getElementById("wires");
+const stage=document.getElementById("stage");
+const paper=document.getElementById("paper");
+svg.setAttribute("width",W); svg.setAttribute("height",H);
+svg.setAttribute("viewBox","0 0 "+W+" "+H);
+stage.style.width=W+"px"; stage.style.height=H+"px";
+
+function mk(t,at){const el=document.createElementNS(NS,t);for(const k in at)el.setAttribute(k,at[k]);return el;}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+const defs=mk("defs",{});
+const mrk=mk("marker",{id:"ar",markerWidth:"9",markerHeight:"9",refX:"8",refY:"3.2",orient:"auto",markerUnits:"userSpaceOnUse"});
+mrk.appendChild(mk("path",{d:"M0,0 L8,3.2 L0,6.4 z",fill:"var(--flow)"}));
+defs.appendChild(mrk); svg.appendChild(defs);
+
+const gLane=mk("g",{}), gEdge=mk("g",{}), gArt=mk("g",{});
+svg.appendChild(gLane); svg.appendChild(gEdge); svg.appendChild(gArt);
+
+// phases
+PHASES.forEach((p,i)=>{
+  if(i>0) gLane.appendChild(mk("line",{x1:p.x0,y1:0,x2:p.x0,y2:H,stroke:"var(--phase-line)","stroke-width":"2","stroke-dasharray":"14 9"}));
+  const tx=mk("text",{x:(p.x0+p.x1)/2,y:34,"text-anchor":"middle","font-size":"22","font-weight":"700",fill:"var(--ink-soft)"});
+  tx.textContent=p.n; gLane.appendChild(tx);
+});
+gLane.appendChild(mk("line",{x1:LANE_X0,y1:60,x2:LANE_X1,y2:60,stroke:"var(--lane-line)","stroke-width":"2"}));
+
+// pool + lanes
+const poolTop=LANES[0].y0, poolBot=LANES[LANES.length-1].y1;
+gLane.appendChild(mk("rect",{x:LANE_X0,y:poolTop,width:LANE_X1-LANE_X0,height:poolBot-poolTop,fill:"none",stroke:"var(--lane-line)","stroke-width":"2"}));
+gLane.appendChild(mk("rect",{x:LANE_X0,y:563,width:POOL_W,height:2500-563,fill:"var(--lane-head)",stroke:"var(--lane-line)","stroke-width":"1.5"}));
+(function(){
+  const cy=(563+2500)/2, cx=LANE_X0+POOL_W/2;
+  const t=mk("text",{x:cx,y:cy,"text-anchor":"middle","font-size":"15","font-weight":"700",fill:"var(--ink-soft)",transform:"rotate(-90 "+cx+" "+cy+")"});
+  t.textContent="GESTIÓN DE SOLICITUDES DE MEJORA"; gLane.appendChild(t);
+})();
+LANES.forEach(L=>{
+  gLane.appendChild(mk("rect",{x:LANE_X0+POOL_W,y:L.y0,width:HEAD_W,height:L.y1-L.y0,fill:"var(--lane-head)",stroke:"var(--lane-line)","stroke-width":"1.5"}));
+  gLane.appendChild(mk("line",{x1:LANE_X0,y1:L.y1,x2:LANE_X1,y2:L.y1,stroke:"var(--lane-line)","stroke-width":"1.5"}));
+  const cx=LANE_X0+POOL_W+HEAD_W/2, cy=(L.y0+L.y1)/2;
+  const t=mk("text",{x:cx,y:cy,"text-anchor":"middle","font-size":"13","font-weight":"700",fill:"var(--ink-soft)",transform:"rotate(-90 "+cx+" "+cy+")"});
+  t.textContent=L.n; gLane.appendChild(t);
+});
+
+// edges
+E.forEach(e=>{
+  const pts=route(e).map(p=>p[0]+","+p[1]).join(" ");
+  gEdge.appendChild(mk("polyline",{points:pts,fill:"none",stroke:"var(--flow)","stroke-width":"2.2","marker-end":"url(#ar)"}));
+  const lab=e[4];
+  if(lab){
+    const p=route(e), a=p[0], b=p[1];
+    const lx=(a[0]+b[0])/2, ly=(a[1]+b[1])/2;
+    const horiz=Math.abs(a[1]-b[1])<2;
+    const t=mk("text",{x:lx+(horiz?0:12),y:ly+(horiz?-8:0),"text-anchor":horiz?"middle":"start","font-size":"15",fill:"var(--ink-soft)"});
+    t.textContent=lab; gEdge.appendChild(t);
+  }
+});
+
+// artifacts (documents / datastores) + dotted associations
+N.forEach(n=>{
+  if(n.t!=="d"&&n.t!=="b") return;
+  const d=dims(n), x=n.x-d.w/2, y=n.y-d.h/2;
+  if(n.t==="d"){
+    const f=14;
+    gArt.appendChild(mk("path",{d:`M${x},${y} H${x+d.w} V${y+d.h-f} L${x+d.w-f},${y+d.h} H${x} Z`,
+      fill:n.grey?"var(--doc-fill)":"var(--doc-fill)",stroke:"var(--doc-line)","stroke-width":"1.6"}));
+  }else{
+    gArt.appendChild(mk("ellipse",{cx:n.x,cy:y+11,rx:d.w/2,ry:11,fill:"var(--doc-fill)",stroke:"var(--doc-line)","stroke-width":"1.6"}));
+    gArt.appendChild(mk("path",{d:`M${x},${y+11} V${y+d.h-11} A${d.w/2},11 0 0 0 ${x+d.w},${y+d.h-11} V${y+11}`,
+      fill:"var(--doc-fill)",stroke:"var(--doc-line)","stroke-width":"1.6"}));
+  }
+  const words=n.l.split(" "); const lines=[]; let cur="";
+  words.forEach(w=>{ if((cur+" "+w).trim().length>16){lines.push(cur.trim());cur=w;} else cur+=" "+w; });
+  if(cur.trim())lines.push(cur.trim());
+  const startY=y-6-(lines.length-1)*12;
+  lines.forEach((ln,i)=>{
+    const t=mk("text",{x:n.x,y:startY+i*12,"text-anchor":"middle","font-size":"11",fill:"var(--ink-soft)"});
+    t.textContent=ln; gArt.appendChild(t);
+  });
+});
+A.forEach(([a,b])=>{
+  const na=BY[a], nb=BY[b];
+  gArt.appendChild(mk("line",{x1:na.x,y1:na.y,x2:nb.x,y2:nb.y,stroke:"var(--doc-line)","stroke-width":"1.4","stroke-dasharray":"5 5",opacity:".75"}));
+});
+
+// gateways / events / timers as svg
+N.forEach(n=>{
+  const d=dims(n);
+  if(n.t==="g"||n.t==="p"){
+    const r=GW/2;
+    gArt.appendChild(mk("path",{d:`M${n.x},${n.y-r} L${n.x+r},${n.y} L${n.x},${n.y+r} L${n.x-r},${n.y} Z`,
+      fill:"#FFE699",stroke:"#BF8F00","stroke-width":"2"}));
+    if(n.t==="g"){
+      gArt.appendChild(mk("path",{d:`M${n.x-11},${n.y-11} L${n.x+11},${n.y+11} M${n.x+11},${n.y-11} L${n.x-11},${n.y+11}`,stroke:"#7F6000","stroke-width":"3.4"}));
+    }else{
+      gArt.appendChild(mk("path",{d:`M${n.x-13},${n.y} H${n.x+13} M${n.x},${n.y-13} V${n.y+13}`,stroke:"#7F6000","stroke-width":"3.4"}));
+    }
+    if(n.t==="g"){
+      const words=n.l.split(" "); const lines=[]; let cur="";
+      words.forEach(w=>{ if((cur+" "+w).trim().length>18){lines.push(cur.trim());cur=w;} else cur+=" "+w; });
+      if(cur.trim())lines.push(cur.trim());
+      lines.forEach((ln,i)=>{
+        const t=mk("text",{x:n.x,y:n.y+r+16+i*13,"text-anchor":"middle","font-size":"12",fill:"var(--ink-soft)"});
+        t.textContent=ln; gArt.appendChild(t);
+      });
+    }
+  }
+  if(n.t==="e"||n.t==="f"||n.t==="k"){
+    const r=(n.t==="k")?KR:ER;
+    const fill=n.t==="e"?"#C5E0B4":(n.t==="f"?"#F4B6B6":"#FFF2CC");
+    const line=n.t==="e"?"#548235":(n.t==="f"?"#C00000":"#BF8F00");
+    gArt.appendChild(mk("circle",{cx:n.x,cy:n.y,r:r,fill:fill,stroke:line,"stroke-width":n.t==="f"?"4":"2.6"}));
+    if(n.t==="k"){
+      gArt.appendChild(mk("circle",{cx:n.x,cy:n.y,r:r-6,fill:"none",stroke:line,"stroke-width":"2"}));
+      gArt.appendChild(mk("path",{d:`M${n.x},${n.y-10} V${n.y} L${n.x+7},${n.y+5}`,stroke:line,"stroke-width":"2.4",fill:"none"}));
+    }
+    const t=mk("text",{x:n.x,y:n.y+r+17,"text-anchor":"middle","font-size":"12",fill:"var(--ink-soft)"});
+    t.textContent=n.l; gArt.appendChild(t);
+  }
+});
+
+/* ================= editable nodes ================= */
+const EDIT = N.filter(n=>n.t==="t"||n.t==="s");
+const elFor={};
+EDIT.forEach(n=>{
+  const d=dims(n);
+  const el=document.createElement("div");
+  el.className="node"; el.dataset.id=n.id; el.dataset.st="todo";
+  el.style.left=(n.x-d.w/2)+"px"; el.style.top=(n.y-d.h/2)+"px";
+  el.style.width=d.w+"px"; el.style.height=d.h+"px";
+  if(n.t==="s") el.style.borderWidth="2.6px";
+  el.innerHTML='<span class="txt">'+esc(n.l)+'</span><i class="badge"></i><i class="noteflag" style="display:none">✎</i>';
+  stage.appendChild(el); elFor[n.id]=el;
+});
+
+/* ================= state ================= */
+const LS="bpmn-celula-v1";
+let ST={};            // id -> {s:"todo", n:"notes"}
+let dbDoc=null, saveTimer=null;
+
+function paint(){
+  let done=0;
+  EDIT.forEach(n=>{
+    const s=(ST[n.id]&&ST[n.id].s)||"todo";
+    const note=(ST[n.id]&&ST[n.id].n)||"";
+    const el=elFor[n.id];
+    el.dataset.st=s;
+    el.querySelector(".noteflag").style.display=note.trim()?"block":"none";
+    if(s==="done")done++;
+  });
+  document.getElementById("progress").textContent=done+" / "+EDIT.length+" listas";
+}
+function loadLocal(){
+  try{const raw=localStorage.getItem(LS); if(raw)ST=JSON.parse(raw)||{};}catch(e){}
+}
+function saveLocal(){
+  try{localStorage.setItem(LS,JSON.stringify(ST));}catch(e){}
+}
+function persist(){
+  saveLocal();
+  if(!dbDoc)return;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{
+    dbDoc.set({nodes:ST}).catch(()=>{});
+  },600);
+}
+loadLocal(); paint();
+
+(async function(){
+  try{
+    const db = await (window.claude && window.claude.use ? window.claude.use("db") : null);
+    if(!db) return;
+    dbDoc = db.doc("state/board");
+    dbDoc.onSnapshot(snap=>{
+      if(snap && snap.exists){
+        const d=snap.data && snap.data();
+        if(d && d.nodes && typeof d.nodes==="object"){
+          ST = d.nodes; saveLocal(); paint();
+          if(POP.id) syncPop();
+        }
+      }else if(Object.keys(ST).length){
+        dbDoc.set({nodes:ST}).catch(()=>{});
+      }
+    },()=>{});
+  }catch(e){}
+})();
+
+/* ================= popover ================= */
+const pop=document.getElementById("pop");
+const popttl=document.getElementById("popttl");
+const popcrumb=document.getElementById("popcrumb");
+const popnotes=document.getElementById("popnotes");
+const poplinks=document.getElementById("poplinks");
+const savedEl=document.getElementById("saved");
+const POP={id:null};
+
+function laneOf(y){for(const L of LANES) if(y>=L.y0&&y<L.y1) return L.n; return "";}
+function phaseOf(x){for(const P of PHASES) if(x>=P.x0&&x<P.x1) return P.n; return "";}
+
+function place(){
+  if(!POP.id)return;
+  const r=elFor[POP.id].getBoundingClientRect();
+  const pw=pop.offsetWidth||330, ph=pop.offsetHeight||330;
+  let L=r.left, T=r.bottom+8;
+  if(L+pw>window.innerWidth-10) L=window.innerWidth-pw-10;
+  if(L<10)L=10;
+  if(T+ph>window.innerHeight-10) T=Math.max(10,r.top-ph-8);
+  pop.style.left=L+"px"; pop.style.top=T+"px";
+}
+function renderLinks(txt){
+  poplinks.innerHTML="";
+  const urls=(txt.match(/https?:\/\/[^\s<>"')]+/g)||[]).slice(0,8);
+  urls.forEach(u=>{
+    const a=document.createElement("a");
+    a.href=u; a.target="_blank"; a.rel="noopener noreferrer";
+    a.textContent="↗ "+(u.length>46?u.slice(0,46)+"…":u);
+    poplinks.appendChild(a);
+  });
+}
+function syncPop(){
+  const rec=ST[POP.id]||{};
+  const s=rec.s||"todo";
+  pop.querySelectorAll(".st").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.s===s)));
+  if(document.activeElement!==popnotes) popnotes.value=rec.n||"";
+  renderLinks(popnotes.value);
+}
+function open(id){
+  POP.id=id;
+  const n=BY[id];
+  Object.values(elFor).forEach(e=>e.classList.remove("sel"));
+  elFor[id].classList.add("sel");
+  popttl.textContent=n.l;
+  popcrumb.textContent=phaseOf(n.x)+" · "+laneOf(n.y);
+  savedEl.textContent="";
+  syncPop();
+  pop.classList.add("on");
+  place();
+}
+function close(){
+  POP.id=null; pop.classList.remove("on");
+  Object.values(elFor).forEach(e=>e.classList.remove("sel"));
+}
+
+stage.addEventListener("click",ev=>{
+  const el=ev.target.closest(".node"); if(!el)return;
+  ev.stopPropagation();
+  if(POP.id===el.dataset.id) close(); else open(el.dataset.id);
+});
+pop.addEventListener("click",ev=>ev.stopPropagation());
+document.addEventListener("click",()=>{if(POP.id)close();});
+document.getElementById("popclose").addEventListener("click",close);
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&POP.id)close();});
+
+pop.querySelectorAll(".st").forEach(b=>{
+  b.addEventListener("click",()=>{
+    if(!POP.id)return;
+    ST[POP.id]=ST[POP.id]||{};
+    ST[POP.id].s=b.dataset.s;
+    persist(); paint(); syncPop();
+    savedEl.textContent="Guardado";
+    setTimeout(()=>{if(savedEl)savedEl.textContent="";},1400);
+  });
+});
+let noteT=null;
+popnotes.addEventListener("input",()=>{
+  if(!POP.id)return;
+  ST[POP.id]=ST[POP.id]||{};
+  ST[POP.id].n=popnotes.value;
+  renderLinks(popnotes.value);
+  savedEl.textContent="Guardando…";
+  clearTimeout(noteT);
+  noteT=setTimeout(()=>{
+    persist(); paint();
+    savedEl.textContent="Guardado";
+    setTimeout(()=>{if(savedEl&&POP.id)savedEl.textContent="";},1400);
+  },450);
+});
+
+/* ================= zoom & pan ================= */
+const vp=document.getElementById("viewport");
+const zv=document.getElementById("zoomval");
+let scale=1;
+function apply(){
+  stage.style.transform="scale("+scale+")";
+  zv.textContent=Math.round(scale*100)+"%";
+  place();
+}
+function fitH(){
+  const avail=vp.clientHeight-16;
+  scale=Math.max(.05,avail/H);
+  apply(); vp.scrollLeft=0; vp.scrollTop=0;
+}
+function zoomAt(f,cx,cy){
+  const old=scale;
+  scale=Math.min(3,Math.max(.05,scale*f));
+  const r=vp.getBoundingClientRect();
+  const px=(vp.scrollLeft+(cx-r.left))/old, py=(vp.scrollTop+(cy-r.top))/old;
+  apply();
+  vp.scrollLeft=px*scale-(cx-r.left);
+  vp.scrollTop=py*scale-(cy-r.top);
+}
+document.getElementById("zin").addEventListener("click",()=>{const r=vp.getBoundingClientRect();zoomAt(1.25,r.left+r.width/2,r.top+r.height/2);});
+document.getElementById("zout").addEventListener("click",()=>{const r=vp.getBoundingClientRect();zoomAt(.8,r.left+r.width/2,r.top+r.height/2);});
+document.getElementById("zfit").addEventListener("click",fitH);
+vp.addEventListener("wheel",e=>{
+  if(e.ctrlKey||e.metaKey){e.preventDefault();zoomAt(e.deltaY<0?1.1:.9,e.clientX,e.clientY);}
+},{passive:false});
+vp.addEventListener("scroll",place);
+window.addEventListener("resize",place);
+
+let pan=null;
+vp.addEventListener("pointerdown",e=>{
+  if(e.target.closest(".node"))return;
+  pan={x:e.clientX,y:e.clientY,l:vp.scrollLeft,t:vp.scrollTop};
+  vp.classList.add("panning"); vp.setPointerCapture(e.pointerId);
+});
+vp.addEventListener("pointermove",e=>{
+  if(!pan)return;
+  vp.scrollLeft=pan.l-(e.clientX-pan.x);
+  vp.scrollTop=pan.t-(e.clientY-pan.y);
+});
+["pointerup","pointercancel"].forEach(ev=>vp.addEventListener(ev,()=>{pan=null;vp.classList.remove("panning");}));
+
+fitH();
+setTimeout(fitH,60);
+})();
+</script>
+</body>
+</html>

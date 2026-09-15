@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f4f5f7;
+  --chrome: #ffffff;
+  --chrome-2: #f0f1f4;
+  --ink: #1d2430;
+  --ink-soft: #5b6575;
+  --line: #d5d9e0;
+  --paper: #ffffff;
+  --lane-head: #f7f8fa;
+  --lane-line: #9aa3af;
+  --phase-line: #b6bdc7;
+  --flow: #3f4753;
+  --doc-fill: #f2f2f2;
+  --doc-line: #9aa3af;
+  --accent: #2e75b6;
+  --node-ink: #12202e;
+  --link-fill: #e3eefa;
+  --danger: #c0392b;
+
+  --todo-fill: #deebf7;
+  --todo-line: #2e75b6;
+  --todo-dot: #2e75b6;
+  --prog-fill: #fff2cc;
+  --prog-line: #bf8f00;
+  --prog-dot: #d69b00;
+  --test-fill: #e9d9f7;
+  --test-line: #7030a0;
+  --test-dot: #7030a0;
+  --done-fill: #d9ead3;
+  --done-line: #4c8b2b;
+  --done-dot: #4c8b2b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --chrome: #1c2027;
+    --chrome-2: #232830;
+    --ink: #e7eaef;
+    --ink-soft: #9aa4b2;
+    --line: #333a45;
+    --paper: #1a1e24;
+    --lane-head: #22262e;
+    --lane-line: #4a5260;
+    --phase-line: #3c434e;
+    --flow: #9aa4b2;
+    --doc-fill: #272c34;
+    --doc-line: #5a6270;
+    --accent: #4f94d4;
+    --node-ink: #e7eaef;
+    --link-fill: #1b2d42;
+    --danger: #e5675a;
+    --todo-fill: #1e3348;
+    --todo-line: #4f94d4;
+    --prog-fill: #3d3315;
+    --prog-line: #d6a723;
+    --test-fill: #31204a;
+    --test-line: #a06fd0;
+    --done-fill: #1f3a1c;
+    --done-line: #63b13f;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-chrome: var(--chrome);
+  --color-chrome-2: var(--chrome-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-done-line: var(--done-line);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
