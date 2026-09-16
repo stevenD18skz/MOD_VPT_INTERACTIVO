@@ -1323,7 +1323,7 @@ const Diagram = memo(function Diagram({
                 strokeDasharray="14 9"
               />
             )}
-            <text x={(p.x0 + p.x1) / 2} y={34} textAnchor="middle" fontSize={22} fontWeight={700} style={soft}>
+            <text x={(p.x0 + p.x1) / 2} y={34} textAnchor="middle" fontSize={24} fontWeight={700} style={soft}>
               {p.n}
             </text>
           </g>
@@ -1350,7 +1350,7 @@ const Diagram = memo(function Diagram({
           x={poolCx}
           y={poolCy}
           textAnchor="middle"
-          fontSize={15}
+          fontSize={16}
           fontWeight={700}
           style={soft}
           transform={`rotate(-90 ${poolCx} ${poolCy})`}
@@ -1382,7 +1382,7 @@ const Diagram = memo(function Diagram({
                 x={cx}
                 y={cy}
                 textAnchor="middle"
-                fontSize={13}
+                fontSize={14}
                 fontWeight={700}
                 style={soft}
                 transform={`rotate(-90 ${cx} ${cy})`}
@@ -1415,7 +1415,7 @@ const Diagram = memo(function Diagram({
                   x={(a[0] + b[0]) / 2 + (horiz ? 0 : 12)}
                   y={(a[1] + b[1]) / 2 + (horiz ? -8 : 0)}
                   textAnchor={horiz ? "middle" : "start"}
-                  fontSize={15}
+                  fontSize={16}
                   style={soft}
                 >
                   {lab}
@@ -1432,8 +1432,8 @@ const Diagram = memo(function Diagram({
           const d = dims(n);
           const x = n.x - d.w / 2;
           const y = n.y - d.h / 2;
-          const lines = wrapWords(n.l, 16);
-          const startY = y - 6 - (lines.length - 1) * 12;
+          const lines = wrapWords(n.l, 15);
+          const startY = y - 6 - (lines.length - 1) * 13;
           const isLinked = linked.has(n.l);
           const st = docStatus[n.l] ?? "empty";
           // El color dice el estado; un documento vacío pero enlazado se ve azul.
@@ -1472,9 +1472,9 @@ const Diagram = memo(function Diagram({
                 <text
                   key={i}
                   x={n.x}
-                  y={startY + i * 12}
+                  y={startY + i * 13}
                   textAnchor="middle"
-                  fontSize={11}
+                  fontSize={12}
                   fontWeight={isLinked ? 600 : undefined}
                   style={isLinked ? { fill: "var(--accent)" } : soft}
                 >
@@ -1520,8 +1520,8 @@ const Diagram = memo(function Diagram({
                   strokeWidth={3.4}
                 />
                 {n.t === "g" &&
-                  wrapWords(n.l, 18).map((ln, i) => (
-                    <text key={i} x={n.x} y={n.y + r + 16 + i * 13} textAnchor="middle" fontSize={12} style={soft}>
+                  wrapWords(n.l, 16).map((ln, i) => (
+                    <text key={i} x={n.x} y={n.y + r + 17 + i * 14} textAnchor="middle" fontSize={13} style={soft}>
                       {ln}
                     </text>
                   ))}
@@ -1557,7 +1557,7 @@ const Diagram = memo(function Diagram({
                     />
                   </>
                 )}
-                <text x={n.x} y={n.y + r + 17} textAnchor="middle" fontSize={12} style={soft}>
+                <text x={n.x} y={n.y + r + 18} textAnchor="middle" fontSize={13} style={soft}>
                   {n.l}
                 </text>
               </g>
@@ -1596,7 +1596,7 @@ function DevTools({ cx, top }: { cx: number; top: number }) {
         style={{ fill: "var(--lane-head)", stroke: "var(--line)" }}
         strokeWidth={1.2}
       />
-      <text x={cx} y={top + 15} textAnchor="middle" fontSize={9.5} fontWeight={700} letterSpacing={0.8} style={soft}>
+      <text x={cx} y={top + 15} textAnchor="middle" fontSize={10} fontWeight={700} letterSpacing={0.7} style={soft}>
         HERRAMIENTAS
       </text>
       {tools.map((t, i) => {
@@ -1604,7 +1604,7 @@ function DevTools({ cx, top }: { cx: number; top: number }) {
         return (
           <g key={t.name}>
             <g transform={`translate(${x - 14} ${top + 22}) scale(${28 / 24})`}>{t.icon}</g>
-            <text x={x} y={top + 67} textAnchor="middle" fontSize={9.5} style={soft}>
+            <text x={x} y={top + 67} textAnchor="middle" fontSize={10} style={soft}>
               {t.name}
             </text>
           </g>

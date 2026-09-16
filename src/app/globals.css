@@ -5,7 +5,9 @@
   --chrome: #ffffff;
   --chrome-2: #f0f1f4;
   --ink: #1d2430;
-  --ink-soft: #5b6575;
+  /* ~7.5:1 sobre --bg/--chrome (antes ~5.4:1) — el texto secundario es el más usado
+     de la app (etiquetas, notas, fechas, la mayoría del texto del diagrama). */
+  --ink-soft: #45505f;
   --line: #d5d9e0;
   --paper: #ffffff;
   --lane-head: #f7f8fa;

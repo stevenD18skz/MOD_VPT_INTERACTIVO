@@ -56,7 +56,7 @@ export function Library() {
   ];
 
   return (
-    <div className="flex min-h-svwd flex-col">
+    <div className="flex min-h-dvh flex-col">
       <header className="border-b border-line bg-chrome">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -122,7 +122,7 @@ export function Library() {
                       }`}
                     >
                       {c.label}
-                      <span className={`ml-1.5 tabular-nums ${active ? "text-white/80" : "text-ink-soft"}`}>{c.n}</span>
+                      <span className={`ml-1.5 tabular-nums ${active ? "text-white" : "text-ink-soft"}`}>{c.n}</span>
                     </button>
                   );
                 })}
@@ -268,7 +268,7 @@ function FlowCard({ item: { flow, sum }, onEdit }: { item: Item; onEdit: () => v
   const progress = pct(sum.counts.done, sum.total);
 
   return (
-    <li className="group relative flex flex-col rounded-2xl border border-line bg-chrome shadow-sm transition hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-md">
+    <li className="group relative flex flex-col rounded-2xl border border-line bg-chrome shadow-sm transition hover:border-accent/60 hover:shadow-md">
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex items-start justify-between gap-3">
           {sum.current ? (
@@ -360,12 +360,9 @@ function FlowCard({ item: { flow, sum }, onEdit }: { item: Item; onEdit: () => v
             </button>
           </div>
         ) : (
-          <>
-            <span>Actualizado {relativeTime(flow.updatedAt)}</span>
-            <span aria-hidden className="font-medium text-accent transition-transform group-hover:translate-x-0.5">
-              Abrir →
-            </span>
-          </>
+          <div className="ml-auto flex justify-end">
+            <p className="text-xs text-ink-soft">Actualizado {relativeTime(flow.updatedAt)}</p>
+          </div>
         )}
       </div>
     </li>

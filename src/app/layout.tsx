@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -12,9 +12,39 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flujointeractivo.vercel.app";
+const DESCRIPTION =
+  "Biblioteca de flujos de automatización de la Célula de Mejora Operativa: sigue el avance de cada paso, documento y material de apoyo.";
+
 export const metadata: Metadata = {
-  title: "Flujos de Automatización",
-  description: "Biblioteca de flujos de automatización · Célula de Mejora Operativa",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Flujos de Automatización",
+    template: "%s · Flujos de Automatización",
+  },
+  description: DESCRIPTION,
+  applicationName: "Flujos de Automatización",
+  // Herramienta interna sin inicio de sesión todavía: fuera de buscadores por ahora
+  // (ver también app/robots.ts, que bloquea el rastreo además del indexado).
+  robots: { index: false, follow: false },
+  openGraph: {
+    type: "website",
+    title: "Flujos de Automatización",
+    description: DESCRIPTION,
+    siteName: "Flujos de Automatización",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Flujos de Automatización",
+    description: DESCRIPTION,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f4f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#14171c" },
+  ],
 };
 
 // Debe coincidir con THEME_KEY en src/lib/theme.ts (no se puede importar aquí:
