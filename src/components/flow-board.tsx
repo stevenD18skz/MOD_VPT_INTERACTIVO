@@ -171,6 +171,12 @@ function Board({ flow }: { flow: Flow }) {
     if (r) zoomAt(f, r.left + r.width / 2, r.top + r.height / 2);
   };
 
+  /** Fija el zoom a un porcentaje exacto (desde el input), centrado en el visor. */
+  const setZoomPercent = (percent: number) => {
+    const old = scaleRef.current;
+    if (old > 0) zoomCenter(percent / 100 / old);
+  };
+
   useLayoutEffect(() => {
     fitHeight();
     const t = setTimeout(fitHeight, 60);
@@ -279,7 +285,7 @@ function Board({ flow }: { flow: Flow }) {
           <button type="button" className={styles.tb} onClick={() => zoomCenter(0.8)} aria-label="Alejar">
             −
           </button>
-          <span className={styles.zoomval}>{zoom}%</span>
+          <ZoomInput zoom={zoom} min={MIN_SCALE * 100} max={MAX_SCALE * 100} onCommit={setZoomPercent} />
           <button type="button" className={styles.tb} onClick={() => zoomCenter(1.25)} aria-label="Acercar">
             +
           </button>
@@ -494,6 +500,71 @@ function Board({ flow }: { flow: Flow }) {
       )}
       {panel === "material" && <MaterialPanel flow={flow} uploads={uploads} onClose={() => setPanel(null)} />}
     </div>
+  );
+}
+
+/** Nivel de zoom editable: escribe un valor y confírmalo con Enter (o al salir del campo). */
+function ZoomInput({
+  zoom,
+  min,
+  max,
+  onCommit,
+}: {
+  zoom: number;
+  min: number;
+  max: number;
+  onCommit: (percent: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(zoom));
+  const editing = useRef(false);
+
+  // Sigue el zoom real (botones, rueda, "Ajustar alto"…) mientras no se esté editando.
+  useEffect(() => {
+    if (!editing.current) setDraft(String(zoom));
+  }, [zoom]);
+
+  const commit = () => {
+    // Number("") es 0, no NaN: hay que tratar el vacío como inválido a mano,
+    // si no un campo en blanco se leería como "poner el zoom al mínimo".
+    const trimmed = draft.trim();
+    const n = trimmed === "" ? NaN : Number(trimmed);
+    const clamped = Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : zoom;
+    if (clamped !== zoom) onCommit(clamped);
+    setDraft(String(clamped));
+    editing.current = false;
+  };
+
+  return (
+    <span className={styles.zoomBox}>
+      <input
+        type="number"
+        inputMode="numeric"
+        className={styles.zoomInput}
+        value={draft}
+        min={min}
+        max={max}
+        step={5}
+        aria-label={`Nivel de zoom, entre ${min}% y ${max}%`}
+        onFocus={(e) => {
+          editing.current = true;
+          e.target.select();
+        }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setDraft(String(zoom));
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+      <span aria-hidden>%</span>
+    </span>
   );
 }
 

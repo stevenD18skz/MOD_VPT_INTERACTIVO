@@ -71,12 +71,42 @@
 .tb:hover {
   border-color: var(--accent);
 }
-.zoomval {
-  font-size: 12px;
+.zoomBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  height: 27px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--chrome-2);
   color: var(--ink-soft);
-  min-width: 46px;
-  text-align: center;
+  font-size: 12px;
+}
+.zoomBox:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.zoomInput {
+  width: 34px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  /* El input no lleva su propio foco visible: lo da .zoomBox:focus-within. */
+  outline: none;
+  -moz-appearance: textfield;
+}
+.zoomInput::-webkit-outer-spin-button,
+.zoomInput::-webkit-inner-spin-button {
+  margin: 0;
+  /* Las flechitas nativas son diminutas y quedan mal aquí; +/- ya cumplen ese rol. */
+  -webkit-appearance: none;
 }
 .legend {
   display: flex;
