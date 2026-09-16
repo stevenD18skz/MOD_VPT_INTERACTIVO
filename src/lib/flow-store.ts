@@ -4,7 +4,14 @@
 // - Sin Turso ("local"): todo se guarda en localStorage, solo en este navegador.
 
 import { useSyncExternalStore } from "react";
-import { upstreamSteps, type DocStatus, type Flow, type Material, type Status } from "./flow-definition";
+import {
+  upstreamSteps,
+  type DocStatus,
+  type Flow,
+  type Material,
+  type NodeState,
+  type Status,
+} from "./flow-definition";
 import {
   addFileMaterial as remoteAddFile,
   addLinkMaterial as remoteAddLink,
@@ -281,38 +288,33 @@ export function setDocStatus(id: string, docKey: string, status: DocStatus) {
 }
 
 /* ================= finales del flujo ================= */
+// Un flujo solo puede estar cerrado por un final a la vez: representa una sola
+// ejecución real de la automatización. Cerrar guarda cómo estaban los pasos del
+// camino justo antes, para que reabrir los devuelva exactamente a eso.
 
 /** Cierra un final: la automatización "llegó hasta aquí", así que sus pasos previos pasan a Done. */
 export function closeEnd(flowId: string, endId: string) {
   const stepIds = upstreamSteps(endId);
-  updateFlow(flowId, (f) => ({
-    ...f,
-    nodes: {
-      ...f.nodes,
-      ...Object.fromEntries(stepIds.map((id) => [id, { ...f.nodes[id], s: "done" as Status }])),
-    },
-    closedEnds: [...new Set([...(f.closedEnds ?? []), endId])],
-  }));
-  persist(() => remoteCloseEnd(flowId, endId));
-}
-
-/**
- * Reabre un final. Vuelve a TODO los pasos que solo llevaban a él; los que también
- * llevan a otro final que sigue cerrado se dejan tal cual (no se pisa ese progreso).
- */
-export function reopenEnd(flowId: string, endId: string) {
   updateFlow(flowId, (f) => {
-    const stillClosed = (f.closedEnds ?? []).filter((e) => e !== endId);
-    const protectedByOthers = new Set(stillClosed.flatMap(upstreamSteps));
-    const toRevert = upstreamSteps(endId).filter((id) => !protectedByOthers.has(id));
+    const snapshot: Record<string, NodeState> = {};
+    for (const id of stepIds) snapshot[id] = f.nodes[id] ?? {};
     return {
       ...f,
       nodes: {
         ...f.nodes,
-        ...Object.fromEntries(toRevert.map((id) => [id, { ...f.nodes[id], s: "todo" as Status }])),
+        ...Object.fromEntries(stepIds.map((id) => [id, { ...f.nodes[id], s: "done" as Status }])),
       },
-      closedEnds: stillClosed,
+      closed: { endId, snapshot },
     };
+  });
+  persist(() => remoteCloseEnd(flowId, endId));
+}
+
+/** Reabre el final activo: restaura los pasos de su camino a como estaban antes de cerrarlo. */
+export function reopenEnd(flowId: string, endId: string) {
+  updateFlow(flowId, (f) => {
+    if (!f.closed || f.closed.endId !== endId) return f;
+    return { ...f, nodes: { ...f.nodes, ...f.closed.snapshot }, closed: null };
   });
   persist(() => remoteReopenEnd(flowId, endId));
 }

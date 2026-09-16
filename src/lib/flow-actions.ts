@@ -13,6 +13,7 @@ import {
   MAX_MATERIAL_BYTES,
   STATUSES,
   normalizeUrl,
+  type ClosedState,
   type DocStatus,
   type Flow,
   type Material,
@@ -71,9 +72,11 @@ function cleanDocs(raw: unknown): Record<string, DocStatus> {
   return out;
 }
 
-function cleanClosedEnds(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return [...new Set(raw.filter((e): e is string => typeof e === "string" && END_IDS.has(e)))];
+function cleanClosedState(raw: unknown): ClosedState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const endId = (raw as { endId?: unknown }).endId;
+  if (typeof endId !== "string" || !END_IDS.has(endId)) return null;
+  return { endId, snapshot: cleanNodes((raw as { snapshot?: unknown }).snapshot) };
 }
 
 /** Del navegador solo pueden venir enlaces (los archivos exigen Turso + Blob). */
@@ -124,7 +127,7 @@ export async function importFlows(flows: Flow[]) {
       links: cleanLinks(f.links),
       docs: cleanDocs(f.docs),
       materials: cleanMaterials(f.materials),
-      closedEnds: cleanClosedEnds(f.closedEnds),
+      closed: cleanClosedState(f.closed),
     };
   });
   await db.insertFlows(clean);

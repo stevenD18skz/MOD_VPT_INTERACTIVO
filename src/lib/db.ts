@@ -1,18 +1,25 @@
 // Acceso a Turso (libSQL). Solo se usa en el servidor (Route Handlers y Server Actions).
 
 import { createClient, type Client, type InStatement, type Row } from "@libsql/client";
-import { upstreamSteps, type DocStatus, type Flow, type Material, type NodeState } from "./flow-definition";
+import {
+  upstreamSteps,
+  type ClosedState,
+  type DocStatus,
+  type Flow,
+  type Material,
+  type NodeState,
+} from "./flow-definition";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL,
-  nodes       TEXT NOT NULL DEFAULT '{}',
-  links       TEXT NOT NULL DEFAULT '{}',
-  doc_status  TEXT NOT NULL DEFAULT '{}',
-  closed_ends TEXT NOT NULL DEFAULT '[]'
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  nodes        TEXT NOT NULL DEFAULT '{}',
+  links        TEXT NOT NULL DEFAULT '{}',
+  doc_status   TEXT NOT NULL DEFAULT '{}',
+  closed_state TEXT NOT NULL DEFAULT 'null'
 )`;
 
 const MATERIALS_SCHEMA = `CREATE TABLE IF NOT EXISTS materials (
@@ -52,7 +59,9 @@ async function migrate(c: Client) {
     "write",
   );
   await ensureColumn(c, "doc_status", "ALTER TABLE flows ADD COLUMN doc_status TEXT NOT NULL DEFAULT '{}'");
-  await ensureColumn(c, "closed_ends", "ALTER TABLE flows ADD COLUMN closed_ends TEXT NOT NULL DEFAULT '[]'");
+  // closed_ends: columna de una versión anterior (varios finales cerrados a la vez); ya
+  // no se usa, se reemplazó por closed_state (un solo final activo, con snapshot).
+  await ensureColumn(c, "closed_state", "ALTER TABLE flows ADD COLUMN closed_state TEXT NOT NULL DEFAULT 'null'");
 }
 
 /** Cliente perezoso: no se crea en el build y prepara las tablas la primera vez. */
@@ -82,12 +91,14 @@ function parseJson<T>(v: unknown): T {
   }
 }
 
-function parseJsonArray<T>(v: unknown): T[] {
+function parseClosedState(v: unknown): ClosedState | null {
   try {
-    const parsed = JSON.parse(String(v ?? "[]"));
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(String(v ?? "null"));
+    if (!parsed || typeof parsed !== "object" || typeof parsed.endId !== "string") return null;
+    const snapshot = parsed.snapshot && typeof parsed.snapshot === "object" ? parsed.snapshot : {};
+    return { endId: parsed.endId, snapshot };
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -101,7 +112,7 @@ function toFlow(r: Row): Flow {
     nodes: parseJson<Record<string, NodeState>>(r.nodes),
     links: parseJson<Record<string, string>>(r.links),
     docs: parseJson<Record<string, DocStatus>>(r.doc_status),
-    closedEnds: parseJsonArray<string>(r.closed_ends),
+    closed: parseClosedState(r.closed_state),
   };
 }
 
@@ -149,7 +160,7 @@ export async function insertFlows(flows: Flow[]) {
   await (await db()).batch(
     flows.flatMap((f) => [
       {
-        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status, closed_ends)
+        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status, closed_state)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           f.id,
@@ -160,7 +171,7 @@ export async function insertFlows(flows: Flow[]) {
           JSON.stringify(f.nodes),
           JSON.stringify(f.links ?? {}),
           JSON.stringify(f.docs ?? {}),
-          JSON.stringify(f.closedEnds ?? []),
+          JSON.stringify(f.closed ?? null),
         ],
       },
       ...(f.materials ?? []).map((m) => materialInsert(f.id, m, true)),
@@ -235,56 +246,62 @@ export async function setDocStatus(id: string, docKey: string, status: DocStatus
 }
 
 /* ================= finales del flujo ================= */
+// Un flujo solo puede estar cerrado por un final a la vez; cerrar guarda una foto de
+// cómo estaban los pasos del camino justo antes, así reabrir los devuelve exactamente
+// a eso (no simplemente los vacía). Ver ClosedState en flow-definition.ts.
 
-function nodePatchStmt(flowId: string, nodeId: string, s: "done" | "todo"): InStatement {
+function nodeSetDoneStmt(flowId: string, nodeId: string): InStatement {
   const path = jsonPath(nodeId);
   return {
     sql: `UPDATE flows
-          SET nodes = json_set(nodes, ?, json(json_patch(coalesce(json_extract(nodes, ?), '{}'), ?)))
+          SET nodes = json_set(nodes, ?, json(json_patch(coalesce(json_extract(nodes, ?), '{}'), '{"s":"done"}')))
           WHERE id = ?`,
-    args: [path, path, JSON.stringify({ s }), flowId],
+    args: [path, path, flowId],
   };
 }
 
-/** Cierra un final: marca "done" todos los pasos previos a él. */
+/** Reemplaza por completo el estado de un paso (para restaurar un snapshot exacto). */
+function nodeReplaceStmt(flowId: string, nodeId: string, state: NodeState): InStatement {
+  const path = jsonPath(nodeId);
+  return {
+    sql: `UPDATE flows SET nodes = json_set(nodes, ?, json(?)) WHERE id = ?`,
+    args: [path, JSON.stringify(state), flowId],
+  };
+}
+
+/** Cierra un final: guarda cómo estaban sus pasos y los marca "done". */
 export async function closeEnd(id: string, endId: string) {
   const c = await db();
-  const cur = await c.execute({ sql: "SELECT closed_ends FROM flows WHERE id = ?", args: [id] });
+  const cur = await c.execute({ sql: "SELECT nodes FROM flows WHERE id = ?", args: [id] });
   if (!cur.rows.length) return;
-  const closed = new Set(parseJsonArray<string>(cur.rows[0].closed_ends));
-  closed.add(endId);
+  const nodes = parseJson<Record<string, NodeState>>(cur.rows[0].nodes);
+  const pathSteps = upstreamSteps(endId);
+  const snapshot: Record<string, NodeState> = {};
+  for (const sid of pathSteps) snapshot[sid] = nodes[sid] ?? {};
+  const closedState: ClosedState = { endId, snapshot };
   await c.batch(
     [
-      ...upstreamSteps(endId).map((sid) => nodePatchStmt(id, sid, "done")),
+      ...pathSteps.map((sid) => nodeSetDoneStmt(id, sid)),
       {
-        sql: "UPDATE flows SET closed_ends = ?, updated_at = ? WHERE id = ?",
-        args: [JSON.stringify([...closed]), Date.now(), id],
+        sql: "UPDATE flows SET closed_state = ?, updated_at = ? WHERE id = ?",
+        args: [JSON.stringify(closedState), Date.now(), id],
       },
     ],
     "write",
   );
 }
 
-/**
- * Reabre un final: vuelve a "todo" los pasos que solo llevaban a él (los que también
- * llevan a otro final que sigue cerrado se dejan como están).
- */
+/** Reabre el final activo: restaura los pasos de su camino a como estaban antes de cerrarlo. */
 export async function reopenEnd(id: string, endId: string) {
   const c = await db();
-  const cur = await c.execute({ sql: "SELECT closed_ends FROM flows WHERE id = ?", args: [id] });
+  const cur = await c.execute({ sql: "SELECT closed_state FROM flows WHERE id = ?", args: [id] });
   if (!cur.rows.length) return;
-  const closedArr = parseJsonArray<string>(cur.rows[0].closed_ends);
-  if (!closedArr.includes(endId)) return;
-  const stillClosed = closedArr.filter((e) => e !== endId);
-  const protectedByOthers = new Set(stillClosed.flatMap(upstreamSteps));
-  const toRevert = upstreamSteps(endId).filter((sid) => !protectedByOthers.has(sid));
+  const closed = parseClosedState(cur.rows[0].closed_state);
+  if (!closed || closed.endId !== endId) return;
   await c.batch(
     [
-      ...toRevert.map((sid) => nodePatchStmt(id, sid, "todo")),
-      {
-        sql: "UPDATE flows SET closed_ends = ?, updated_at = ? WHERE id = ?",
-        args: [JSON.stringify(stillClosed), Date.now(), id],
-      },
+      ...Object.entries(closed.snapshot).map(([sid, state]) => nodeReplaceStmt(id, sid, state)),
+      { sql: "UPDATE flows SET closed_state = 'null', updated_at = ? WHERE id = ?", args: [Date.now(), id] },
     ],
     "write",
   );

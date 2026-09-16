@@ -280,6 +280,10 @@
   background: var(--done-fill);
   border-color: var(--done-line);
 }
+.st:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .notes {
   display: block;
   width: 100%;
@@ -297,6 +301,10 @@
 .notes:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+.notes:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .foot {
   display: flex;
@@ -409,6 +417,16 @@
 }
 .endSel {
   box-shadow: 0 0 0 3px rgba(46, 117, 182, 0.45);
+}
+
+/* ---------- paso/final deshabilitado (otro camino ganó) ---------- */
+/* Sigue clicable (se puede ver en modo solo-lectura), solo pierde brillo. */
+.dimmed {
+  opacity: 0.4;
+  filter: saturate(0.6);
+}
+.dimmed:hover {
+  opacity: 0.65;
 }
 
 /* ---------- documentos con enlace (popover) ---------- */

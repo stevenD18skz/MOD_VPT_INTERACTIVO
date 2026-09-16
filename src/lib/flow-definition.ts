@@ -29,8 +29,20 @@ export interface Flow {
   docs?: Record<string, DocStatus>;
   /** Material de apoyo propio de esta automatización (manuales, guías, enlaces…). */
   materials?: Material[];
-  /** IDs de los eventos "Fin" (ver ENDS) que el usuario marcó como cerrados. */
-  closedEnds?: string[];
+  /** Si no es null/undefined, el flujo está cerrado: ver ClosedState. */
+  closed?: ClosedState | null;
+}
+
+/**
+ * Un flujo solo puede estar cerrado por un final a la vez (representa una sola
+ * ejecución real de la automatización, que solo puede terminar de una forma).
+ * `snapshot` guarda cómo estaban los pasos del camino justo antes de cerrar, para
+ * poder revertir exactamente a eso en vez de simplemente vaciarlos.
+ */
+export interface ClosedState {
+  /** ID del evento "Fin" (ver ENDS) por el que se cerró. */
+  endId: string;
+  snapshot: Record<string, NodeState>;
 }
 
 export interface Material {
@@ -391,26 +403,49 @@ export function route(e: Edge): Point[] {
   return [p0, [p1[0], p0[1]], p1];
 }
 
+export interface UpstreamPath {
+  /** Todo nodo (paso, compuerta, evento…) recorrido yendo hacia atrás desde nodeId. */
+  nodes: Set<string>;
+  /** Índices en EDGES de las flechas efectivamente recorridas (para atenuar el resto). */
+  edges: Set<number>;
+}
+
+/**
+ * Recorre el grafo hacia atrás desde un nodo (p. ej. un evento Fin), siguiendo
+ * solo las flechas que realmente llevan hasta él. Se usa para "cerrar" un final:
+ * ese camino queda resaltado y todo lo demás se puede atenuar/deshabilitar.
+ */
+export function upstreamPath(nodeId: string): UpstreamPath {
+  const nodes = new Set<string>();
+  const edges = new Set<number>();
+  const visit = (id: string) => {
+    if (nodes.has(id)) return;
+    nodes.add(id);
+    EDGES.forEach((edge, i) => {
+      if (edge[2] === id) {
+        edges.add(i);
+        visit(edge[0]);
+      }
+    });
+  };
+  EDGES.forEach((edge, i) => {
+    if (edge[2] === nodeId) {
+      edges.add(i);
+      visit(edge[0]);
+    }
+  });
+  return { nodes, edges };
+}
+
 /**
  * IDs de los pasos (t/s) que preceden a un nodo, siguiendo las flechas hacia atrás.
  * Se usa para "cerrar" un evento Fin: marca como Done todo lo que lleva hasta él.
  */
 export function upstreamSteps(nodeId: string): string[] {
-  const seen = new Set<string>();
-  const steps = new Set<string>();
-  const visit = (id: string) => {
-    if (seen.has(id)) return;
-    seen.add(id);
+  return [...upstreamPath(nodeId).nodes].filter((id) => {
     const node = BY_ID[id];
-    if (node && (node.t === "t" || node.t === "s")) steps.add(id);
-    for (const [from, , to] of EDGES) {
-      if (to === id) visit(from);
-    }
-  };
-  for (const [from, , to] of EDGES) {
-    if (to === nodeId) visit(from);
-  }
-  return [...steps];
+    return node && (node.t === "t" || node.t === "s");
+  });
 }
 
 /** Parte un texto en líneas de como máximo `max` caracteres (por palabras). */

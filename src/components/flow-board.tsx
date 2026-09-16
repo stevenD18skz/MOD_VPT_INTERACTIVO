@@ -30,14 +30,17 @@ import {
   docsForStep,
   normalizeUrl,
   stepsForDoc,
+  upstreamPath,
   upstreamSteps,
   laneOf,
   phaseOf,
   route,
   wrapWords,
+  type ClosedState,
   type DocStatus,
   type FlowNode,
   type NodeState,
+  type UpstreamPath,
 } from "@/lib/flow-definition";
 import {
   closeEnd,
@@ -229,7 +232,10 @@ function Board({ flow }: { flow: Flow }) {
   const links = flow.links ?? NO_LINKS;
   const docStatus = flow.docs ?? NO_DOCS;
   const linked = useMemo(() => new Set(Object.keys(links)), [links]);
-  const closedEnds = useMemo(() => new Set(flow.closedEnds ?? []), [flow.closedEnds]);
+  const closed = flow.closed ?? null;
+  // Camino ganador hacia el final cerrado: todo lo que NO esté aquí se atenúa y se bloquea.
+  const closedPath = useMemo(() => (closed ? upstreamPath(closed.endId) : null), [closed]);
+  const isLocked = (id: string) => closed !== null && id !== closed.endId && !closedPath!.nodes.has(id);
   const done = EDITABLE.filter((n) => flow.nodes[n.id]?.s === "done").length;
   const docsLinked = DOC_KEYS.filter((k) => links[k]).length;
   const docsDone = DOC_KEYS.filter((k) => docStatus[k] === "done").length;
@@ -345,13 +351,14 @@ function Board({ flow }: { flow: Flow }) {
         <div ref={sizerRef} className={styles.sizer}>
           <div ref={stageRef} className={styles.stage} style={{ width: W, height: H }}>
             <div className={styles.paper} />
-            <Diagram linked={linked} docStatus={docStatus} closedEnds={closedEnds} />
+            <Diagram linked={linked} docStatus={docStatus} closed={closed} closedPath={closedPath} />
             {EDITABLE.map((n) => (
               <StepNode
                 key={n.id}
                 node={n}
                 state={flow.nodes[n.id]}
                 selected={openId === n.id}
+                dimmed={isLocked(n.id)}
                 nodeRef={(el) => {
                   nodeEls.current[n.id] = el;
                 }}
@@ -374,7 +381,8 @@ function Board({ flow }: { flow: Flow }) {
               <EndNode
                 key={n.id}
                 node={n}
-                closed={closedEnds.has(n.id)}
+                active={closed?.endId === n.id}
+                dimmed={closed !== null && closed.endId !== n.id}
                 selected={openId === n.id}
                 nodeRef={(el) => {
                   nodeEls.current[n.id] = el;
@@ -398,7 +406,7 @@ function Board({ flow }: { flow: Flow }) {
               key={openNode.id}
               flowId={flow.id}
               node={openNode}
-              closed={closedEnds.has(openNode.id)}
+              closed={closed}
               onClose={() => setOpenId(null)}
             />
           ) : isDoc(openNode) ? (
@@ -418,6 +426,8 @@ function Board({ flow }: { flow: Flow }) {
               state={flow.nodes[openNode.id] ?? {}}
               links={links}
               docStatus={docStatus}
+              locked={isLocked(openNode.id)}
+              closedEndNode={closed ? BY_ID[closed.endId] : null}
               onClose={() => setOpenId(null)}
             />
           )}
@@ -443,12 +453,14 @@ function StepNode({
   node,
   state,
   selected,
+  dimmed,
   nodeRef,
   onClick,
 }: {
   node: FlowNode;
   state: NodeState | undefined;
   selected: boolean;
+  dimmed: boolean;
   nodeRef: (el: HTMLButtonElement | null) => void;
   onClick: () => void;
 }) {
@@ -459,7 +471,7 @@ function StepNode({
       ref={nodeRef}
       data-node
       data-st={state?.s ?? "todo"}
-      className={`${styles.node} ${selected ? styles.sel : ""}`}
+      className={`${styles.node} ${selected ? styles.sel : ""} ${dimmed ? styles.dimmed : ""}`}
       style={{
         left: node.x - d.w / 2,
         top: node.y - d.h / 2,
@@ -483,6 +495,8 @@ function StepEditor({
   state,
   links,
   docStatus,
+  locked,
+  closedEndNode,
   onClose,
 }: {
   flowId: string;
@@ -490,6 +504,8 @@ function StepEditor({
   state: NodeState;
   links: Record<string, string>;
   docStatus: Record<string, DocStatus>;
+  locked: boolean;
+  closedEndNode: FlowNode | null;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(state.n ?? "");
@@ -522,6 +538,13 @@ function StepEditor({
       <div className={styles.crumb}>
         {phaseOf(node.x)} · {laneOf(node.y)}
       </div>
+      {locked && (
+        <p className={styles.hint} style={{ margin: "0 0 10px" }}>
+          🔒 Deshabilitado: el flujo se cerró por «Fin»
+          {closedEndNode ? ` en ${phaseOf(closedEndNode.x)} · ${laneOf(closedEndNode.y)}` : ""}, que no pasa por
+          aquí. Solo se puede ver.
+        </p>
+      )}
       <p className={styles.lbl}>Estado</p>
       <div className={styles.states}>
         {STATUSES.map((s) => (
@@ -531,6 +554,7 @@ function StepEditor({
             className={styles.st}
             data-s={s.key}
             aria-pressed={status === s.key}
+            disabled={locked}
             onClick={() => {
               setNodeStatus(flowId, node.id, s.key);
               setSaved("Guardado");
@@ -560,6 +584,7 @@ function StepEditor({
       <textarea
         className={styles.notes}
         value={draft}
+        disabled={locked}
         placeholder="Notas, acuerdos, pendientes, enlaces (pega URLs y aparecen abajo)…"
         onChange={(e) => {
           const v = e.target.value;
@@ -899,16 +924,22 @@ function ArtifactNode({
   );
 }
 
-/** Círculo "Fin": un clic lo cierra (marca listos los pasos previos) o abre su detalle si ya está cerrado. */
+/**
+ * Círculo "Fin": si no hay nada cerrado, un clic lo cierra (marca listos los pasos
+ * previos y deshabilita el resto del flujo). Si este es el final cerrado, abre su
+ * detalle para reabrir. Si el flujo se cerró por OTRO final, aparece atenuado.
+ */
 function EndNode({
   node,
-  closed,
+  active,
+  dimmed,
   selected,
   nodeRef,
   onClick,
 }: {
   node: FlowNode;
-  closed: boolean;
+  active: boolean;
+  dimmed: boolean;
   selected: boolean;
   nodeRef: (el: HTMLButtonElement | null) => void;
   onClick: () => void;
@@ -919,11 +950,17 @@ function EndNode({
       type="button"
       ref={nodeRef}
       data-node
-      className={`${styles.endHit} ${closed ? styles.endClosed : ""} ${selected ? styles.endSel : ""}`}
+      className={`${styles.endHit} ${active ? styles.endClosed : ""} ${selected ? styles.endSel : ""} ${dimmed ? styles.dimmed : ""}`}
       style={{ left: node.x - d.w / 2, top: node.y - d.h / 2, width: d.w, height: d.h }}
       onClick={onClick}
-      aria-label={closed ? `Final cerrado: ${node.l}. Ver detalle o reabrir.` : `Cerrar este final: ${node.l}`}
-      title={closed ? "Final cerrado · clic para ver detalle" : "Clic para cerrar este final"}
+      aria-label={
+        active
+          ? `Final cerrado: ${node.l}. Ver detalle o reabrir.`
+          : dimmed
+            ? `${node.l} (deshabilitado: el flujo ya terminó por otro camino)`
+            : `Cerrar este final: ${node.l}`
+      }
+      title={active ? "Final cerrado · clic para ver detalle" : dimmed ? "El flujo ya terminó por otro camino" : "Clic para cerrar este final"}
     />
   );
 }
@@ -1038,8 +1075,11 @@ function DocPanel({
 }
 
 /**
- * Popover de un evento "Fin": cerrarlo marca en Done todos los pasos previos a él
- * (la automatización llegó hasta aquí); se puede deshacer en cualquier momento.
+ * Popover de un evento "Fin". Solo un final puede estar cerrado a la vez:
+ * - Sin nada cerrado: ofrece cerrar por acá (marca Done el camino y deshabilita el resto).
+ * - Cerrado por ESTE final: muestra el resultado y permite deshacer (vuelve exacto a
+ *   como estaba antes de cerrar).
+ * - Cerrado por OTRO final: solo informa; hay que reabrir aquello primero.
  */
 function EndPanel({
   flowId,
@@ -1049,11 +1089,14 @@ function EndPanel({
 }: {
   flowId: string;
   node: FlowNode;
-  closed: boolean;
+  closed: ClosedState | null;
   onClose: () => void;
 }) {
   const [flash, setFlash] = useFlash();
   const steps = useMemo(() => upstreamSteps(node.id), [node.id]);
+  const isActive = closed?.endId === node.id;
+  const blockedByOther = closed !== null && !isActive;
+  const otherEnd = blockedByOther ? BY_ID[closed.endId] : null;
 
   return (
     <>
@@ -1062,10 +1105,11 @@ function EndPanel({
         {phaseOf(node.x)} · {laneOf(node.y)}
       </div>
       <p className={styles.lbl}>Estado</p>
-      {closed ? (
+      {isActive ? (
         <>
           <p className={styles.hint} style={{ margin: "0 0 10px" }}>
-            ✓ Terminado: la automatización llegó hasta aquí y los {steps.length} pasos previos quedaron en Done.
+            ✓ Terminado: la automatización llegó hasta aquí. Los {steps.length} pasos de este camino quedaron en
+            Done; el resto del flujo se deshabilitó.
           </p>
           <button
             type="button"
@@ -1078,15 +1122,20 @@ function EndPanel({
             Deshacer
           </button>
           <p className={styles.hint}>
-            Los pasos que solo llevaban a este final vuelven a TODO. Los que también llevan a otro final que
-            sigue cerrado se dejan como están.
+            Los pasos de este camino vuelven exactamente a como estaban antes de cerrar, y el resto del flujo se
+            vuelve a habilitar.
           </p>
         </>
+      ) : blockedByOther ? (
+        <p className={styles.hint} style={{ margin: 0 }}>
+          Este flujo ya se cerró por «Fin» en {phaseOf(otherEnd!.x)} · {laneOf(otherEnd!.y)}. Deshaz ese cierre
+          para poder cerrar por acá.
+        </p>
       ) : (
         <>
           <p className={styles.hint} style={{ margin: "0 0 10px" }}>
-            Marca que la automatización terminó aquí: los {steps.length} pasos previos a este final quedarán en
-            Done. Se puede deshacer después.
+            Marca que la automatización terminó aquí: los {steps.length} pasos de este camino quedarán en Done,
+            y el resto del flujo se deshabilitará (no se podrá editar). Se puede deshacer después.
           </p>
           <button
             type="button"
@@ -1276,15 +1325,23 @@ const DOC_COLORS: Record<DocStatus, { fill: string; stroke: string }> = {
   done: { fill: "var(--done-fill)", stroke: "var(--done-line)" },
 };
 
+const DIM_OPACITY = 0.25;
+
 const Diagram = memo(function Diagram({
   linked,
   docStatus,
-  closedEnds,
+  closed,
+  closedPath,
 }: {
   linked: Set<string>;
   docStatus: Record<string, DocStatus>;
-  closedEnds: Set<string>;
+  closed: ClosedState | null;
+  closedPath: UpstreamPath | null;
 }) {
+  const closedEndId = closed?.endId ?? null;
+  // El final activo nunca se atenúa (upstreamPath no se incluye a sí mismo en `nodes`).
+  const dimNode = (id: string) => closedPath !== null && id !== closedEndId && !closedPath.nodes.has(id);
+  const dimEdge = (i: number) => closedPath !== null && !closedPath.edges.has(i);
   const poolTop = LANES[0].y0;
   const poolBot = LANES[LANES.length - 1].y1;
   const headTop = 563;
@@ -1402,7 +1459,7 @@ const Diagram = memo(function Diagram({
           const [a, b] = pts;
           const horiz = Math.abs(a[1] - b[1]) < 2;
           return (
-            <g key={i}>
+            <g key={i} opacity={dimEdge(i) ? DIM_OPACITY : 1}>
               <polyline
                 points={pts.map((p) => p.join(",")).join(" ")}
                 fill="none"
@@ -1503,7 +1560,7 @@ const Diagram = memo(function Diagram({
           if (n.t === "g" || n.t === "p") {
             const r = GW / 2;
             return (
-              <g key={n.id}>
+              <g key={n.id} opacity={dimNode(n.id) ? DIM_OPACITY : 1}>
                 <path
                   d={`M${n.x},${n.y - r} L${n.x + r},${n.y} L${n.x},${n.y + r} L${n.x - r},${n.y} Z`}
                   fill="#FFE699"
@@ -1530,13 +1587,13 @@ const Diagram = memo(function Diagram({
           }
           if (n.t === "e" || n.t === "f" || n.t === "k") {
             const r = n.t === "k" ? KR : ER;
-            const closed = n.t === "f" && closedEnds.has(n.id);
-            const fill = closed ? "var(--done-fill)" : n.t === "e" ? "#C5E0B4" : n.t === "f" ? "#F4B6B6" : "#FFF2CC";
-            const line = closed ? "var(--done-line)" : n.t === "e" ? "#548235" : n.t === "f" ? "#C00000" : "#BF8F00";
+            const active = n.t === "f" && n.id === closedEndId;
+            const fill = active ? "var(--done-fill)" : n.t === "e" ? "#C5E0B4" : n.t === "f" ? "#F4B6B6" : "#FFF2CC";
+            const line = active ? "var(--done-line)" : n.t === "e" ? "#548235" : n.t === "f" ? "#C00000" : "#BF8F00";
             return (
-              <g key={n.id}>
+              <g key={n.id} opacity={dimNode(n.id) ? DIM_OPACITY : 1}>
                 <circle cx={n.x} cy={n.y} r={r} fill={fill} stroke={line} strokeWidth={n.t === "f" ? 4 : 2.6} />
-                {closed && (
+                {active && (
                   <path
                     d={`M${n.x - 9},${n.y} L${n.x - 2},${n.y + 7} L${n.x + 10},${n.y - 8}`}
                     stroke="#fff"
