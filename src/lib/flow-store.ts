@@ -5,6 +5,8 @@
 
 import { useSyncExternalStore } from "react";
 import {
+  branchLock,
+  gatewayBranches,
   upstreamSteps,
   type DocStatus,
   type Flow,
@@ -322,13 +324,28 @@ export function reopenEnd(flowId: string, endId: string) {
 
 /* ================= compuertas (Sí/No…) ================= */
 
-/** Respuesta de una compuerta que NO lleva directo a un final (`target: null` la borra). */
+/**
+ * Respuesta de una compuerta que NO lleva directo a un final (`target: null` la
+ * borra). Responder implica que ya se completaron los pasos previos que llevaron
+ * hasta acá, así que se marcan "done" (salvo los que pertenecen exclusivamente a
+ * la rama que NO se tomó, que quedan bloqueados en vez de completados).
+ */
 export function setGatewayAnswer(flowId: string, gatewayId: string, target: string | null) {
   updateFlow(flowId, (f) => {
     const gatewayAnswers = { ...f.gatewayAnswers };
     if (target) gatewayAnswers[gatewayId] = target;
     else delete gatewayAnswers[gatewayId];
-    return { ...f, gatewayAnswers };
+    if (!target) return { ...f, gatewayAnswers };
+    const other = gatewayBranches(gatewayId).find((b) => b.target !== target);
+    const discarded = other ? branchLock(other.target) : new Set<string>();
+    // La rama elegida también se excluye: en un rework-loop (p. ej. "No, hay que
+    // corregir") el paso de corrección es ancestro de la compuerta por el ciclo,
+    // pero todavía no ocurrió esta vuelta, así que no debe marcarse "done".
+    const chosenForward = branchLock(target);
+    const toMarkDone = upstreamSteps(gatewayId).filter((id) => !discarded.has(id) && !chosenForward.has(id));
+    const nodes = { ...f.nodes };
+    for (const id of toMarkDone) nodes[id] = { ...nodes[id], s: "done" as Status };
+    return { ...f, gatewayAnswers, nodes };
   });
   persist(() => remoteSetGatewayAnswer(flowId, gatewayId, target));
 }

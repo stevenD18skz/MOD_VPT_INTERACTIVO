@@ -2,6 +2,8 @@
 
 import { createClient, type Client, type InStatement, type Row } from "@libsql/client";
 import {
+  branchLock,
+  gatewayBranches,
   upstreamSteps,
   type ClosedState,
   type DocStatus,
@@ -258,9 +260,34 @@ export async function setDocStatus(id: string, docKey: string, status: DocStatus
   await setJsonKey("doc_status", id, docKey, status === "empty" ? null : status);
 }
 
-/** Respuesta de una compuerta que NO lleva directo a un final (`target` = null la borra). */
+/**
+ * Respuesta de una compuerta que NO lleva directo a un final (`target` = null la
+ * borra). Responder marca "done" los pasos previos que llevaron hasta acá (salvo
+ * los que pertenecen solo a la rama que NO se tomó, ver `branchLock`); se
+ * recalcula aquí, nunca se confía en pasos que mande el cliente.
+ */
 export async function setGatewayAnswer(id: string, gatewayId: string, target: string | null) {
-  await setJsonKey("gateway_answers", id, gatewayId, target);
+  if (!target) {
+    await setJsonKey("gateway_answers", id, gatewayId, null);
+    return;
+  }
+  const other = gatewayBranches(gatewayId).find((b) => b.target !== target);
+  const discarded = other ? branchLock(other.target) : new Set<string>();
+  // La rama elegida también se excluye: en un rework-loop el paso de corrección
+  // es ancestro de la compuerta por el ciclo, pero todavía no ocurrió esta vuelta.
+  const chosenForward = branchLock(target);
+  const toMarkDone = upstreamSteps(gatewayId).filter((sid) => !discarded.has(sid) && !chosenForward.has(sid));
+  const path = jsonPath(gatewayId);
+  await (await db()).batch(
+    [
+      ...toMarkDone.map((sid) => nodeSetDoneStmt(id, sid)),
+      {
+        sql: `UPDATE flows SET gateway_answers = json_set(gateway_answers, ?, ?), updated_at = ? WHERE id = ?`,
+        args: [path, target, Date.now(), id],
+      },
+    ],
+    "write",
+  );
 }
 
 /* ================= finales del flujo ================= */
