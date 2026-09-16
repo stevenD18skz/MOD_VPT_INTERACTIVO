@@ -9,6 +9,7 @@ import {
   DOC_KEYS,
   DOC_STATUSES,
   EDITABLE,
+  ENDS,
   MAX_MATERIAL_BYTES,
   STATUSES,
   normalizeUrl,
@@ -23,6 +24,7 @@ const NODE_IDS = new Set(EDITABLE.map((n) => n.id));
 const DOC_SET = new Set(DOC_KEYS);
 const STATUS_SET = new Set<string>(STATUSES.map((s) => s.key));
 const DOC_STATUS_SET = new Set<string>(DOC_STATUSES.map((s) => s.key));
+const END_IDS = new Set(ENDS.map((n) => n.id));
 const MAX_NAME = 200;
 const MAX_DESC = 2000;
 const MAX_NOTE = 20000;
@@ -67,6 +69,11 @@ function cleanDocs(raw: unknown): Record<string, DocStatus> {
     }
   }
   return out;
+}
+
+function cleanClosedEnds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((e): e is string => typeof e === "string" && END_IDS.has(e)))];
 }
 
 /** Del navegador solo pueden venir enlaces (los archivos exigen Turso + Blob). */
@@ -117,6 +124,7 @@ export async function importFlows(flows: Flow[]) {
       links: cleanLinks(f.links),
       docs: cleanDocs(f.docs),
       materials: cleanMaterials(f.materials),
+      closedEnds: cleanClosedEnds(f.closedEnds),
     };
   });
   await db.insertFlows(clean);
@@ -160,6 +168,20 @@ export async function setDocLink(id: string, docKey: string, url: string | null)
 export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
   check(isId(id) && DOC_SET.has(docKey) && DOC_STATUS_SET.has(status));
   await db.setDocStatus(id, docKey, status);
+}
+
+/* ================= finales del flujo ================= */
+// Los pasos a marcar/revertir se recalculan aquí a partir de endId (ver upstreamSteps
+// en db.ts); nunca se confía en una lista de pasos enviada por el cliente.
+
+export async function closeEnd(id: string, endId: string) {
+  check(isId(id) && END_IDS.has(endId));
+  await db.closeEnd(id, endId);
+}
+
+export async function reopenEnd(id: string, endId: string) {
+  check(isId(id) && END_IDS.has(endId));
+  await db.reopenEnd(id, endId);
 }
 
 /* ================= material de apoyo ================= */

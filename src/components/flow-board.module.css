@@ -337,81 +337,78 @@
 .artHit {
   position: absolute;
   inset: -4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   padding: 0;
-  border: 1.6px dashed transparent;
+  border: none;
   border-radius: 8px;
   background: none;
   cursor: pointer;
-  text-decoration: none;
-  transition: border-color 0.12s, background-color 0.12s;
+  transition: box-shadow 0.12s, background-color 0.12s;
 }
 .artHit:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.artIcon {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
+/* Con enlace: clic izquierdo abre el archivo, clic derecho edita el enlace. */
+.artLinked .artHit:hover,
+.artLinked .artHit:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.artTip {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translate(-50%, 100%);
+  padding: 2px 8px;
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  transition: opacity 0.12s, transform 0.12s;
-}
-.artLinked .artHit:hover .artIcon {
-  transform: scale(1.12);
-}
-.art:not(.artLinked) .artIcon {
-  background: var(--chrome);
-  color: var(--accent);
-  border: 1.5px dashed var(--accent);
-  box-shadow: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
   opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+  z-index: 1;
 }
-.art:not(.artLinked) .artHit:hover,
-.art:not(.artLinked) .artHit:focus-visible,
-.artSel .artHit {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-.art:not(.artLinked) .artHit:hover .artIcon,
-.art:not(.artLinked) .artHit:focus-visible .artIcon,
-.artSel .artIcon {
+.artLinked .artHit:hover ~ .artTip,
+.artLinked .artHit:focus-visible ~ .artTip {
   opacity: 1;
+  transform: translate(-50%, 100%) translateY(4px);
+}
+/* Sin enlace: se dejan sin decorar; el cursor ya indica que se puede hacer clic. */
+.art:not(.artLinked) .artHit {
+  cursor: pointer;
 }
 .artSel .artHit {
-  border-style: solid;
-  box-shadow: 0 0 0 3px rgba(46, 117, 182, 0.35);
+  box-shadow: 0 0 0 3px rgba(46, 117, 182, 0.45);
 }
-.artEdit {
+
+/* ---------- finales del flujo (lienzo) ---------- */
+.endHit {
   position: absolute;
-  top: -12px;
-  right: -12px;
-  width: 22px;
-  height: 22px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  border: 1px solid var(--line);
-  background: var(--chrome);
-  color: var(--ink);
+  border: none;
+  background: none;
+  padding: 0;
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.12s;
 }
-.artEdit:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.endHit:hover,
+.endHit:focus-visible {
+  box-shadow: 0 0 0 4px rgba(192, 0, 0, 0.18);
+}
+.endClosed:hover,
+.endClosed:focus-visible {
+  box-shadow: 0 0 0 4px rgba(76, 139, 43, 0.22);
+}
+.endHit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.endSel {
+  box-shadow: 0 0 0 3px rgba(46, 117, 182, 0.45);
 }
 
 /* ---------- documentos con enlace (popover) ---------- */

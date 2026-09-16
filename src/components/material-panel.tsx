@@ -147,6 +147,30 @@ export function MaterialPanel({ flow, uploads, onClose }: { flow: Flow; uploads:
       </div>
 
       <div className={styles.matFooter}>
+        {linkForm ? (
+          <MaterialLinkForm
+            onCancel={() => setLinkForm(false)}
+            onSave={(title, url) => {
+              addLinkMaterial(flow.id, title || new URL(url).hostname, url);
+              setLinkForm(false);
+              setFlash("Enlace guardado");
+            }}
+          />
+        ) : (
+          <div className={styles.dactions}>
+            <button type="button" className={styles.docAction} onClick={() => setLinkForm(true)}>
+              + Agregar enlace
+            </button>
+            <span className={styles.spacer} />
+            {flash && (
+              <span className={styles.ok} role="status">
+                ✓ {flash}
+              </span>
+            )}
+          </div>
+        )}
+
+        
         {uploads ? (
           <button
             type="button"
@@ -196,28 +220,7 @@ export function MaterialPanel({ flow, uploads, onClose }: { flow: Flow; uploads:
           </ul>
         )}
 
-        {linkForm ? (
-          <MaterialLinkForm
-            onCancel={() => setLinkForm(false)}
-            onSave={(title, url) => {
-              addLinkMaterial(flow.id, title || new URL(url).hostname, url);
-              setLinkForm(false);
-              setFlash("Enlace guardado");
-            }}
-          />
-        ) : (
-          <div className={styles.dactions}>
-            <button type="button" className={styles.docAction} onClick={() => setLinkForm(true)}>
-              + Agregar enlace
-            </button>
-            <span className={styles.spacer} />
-            {flash && (
-              <span className={styles.ok} role="status">
-                ✓ {flash}
-              </span>
-            )}
-          </div>
-        )}
+
       </div>
     </aside>
   );

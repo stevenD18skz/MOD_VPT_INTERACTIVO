@@ -29,6 +29,8 @@ export interface Flow {
   docs?: Record<string, DocStatus>;
   /** Material de apoyo propio de esta automatización (manuales, guías, enlaces…). */
   materials?: Material[];
+  /** IDs de los eventos "Fin" (ver ENDS) que el usuario marcó como cerrados. */
+  closedEnds?: string[];
 }
 
 export interface Material {
@@ -202,6 +204,9 @@ export const BY_ID: Record<string, FlowNode> = Object.fromEntries(NODES.map((n) 
 
 /** Pasos editables (tareas y subprocesos): son los que llevan estado y notas. */
 export const EDITABLE = NODES.filter((n) => n.t === "t" || n.t === "s");
+
+/** Eventos "Fin" del flujo: se pueden cerrar para marcar listos todos los pasos previos. */
+export const ENDS = NODES.filter((n) => n.t === "f");
 
 export function dims(n: FlowNode): { w: number; h: number } {
   switch (n.t) {
@@ -384,6 +389,28 @@ export function route(e: Edge): Point[] {
   }
   if (!hz && hzb) return [p0, [p0[0], p1[1]], p1];
   return [p0, [p1[0], p0[1]], p1];
+}
+
+/**
+ * IDs de los pasos (t/s) que preceden a un nodo, siguiendo las flechas hacia atrás.
+ * Se usa para "cerrar" un evento Fin: marca como Done todo lo que lleva hasta él.
+ */
+export function upstreamSteps(nodeId: string): string[] {
+  const seen = new Set<string>();
+  const steps = new Set<string>();
+  const visit = (id: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const node = BY_ID[id];
+    if (node && (node.t === "t" || node.t === "s")) steps.add(id);
+    for (const [from, , to] of EDGES) {
+      if (to === id) visit(from);
+    }
+  };
+  for (const [from, , to] of EDGES) {
+    if (to === nodeId) visit(from);
+  }
+  return [...steps];
 }
 
 /** Parte un texto en líneas de como máximo `max` caracteres (por palabras). */

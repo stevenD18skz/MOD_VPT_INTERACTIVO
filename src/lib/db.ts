@@ -1,7 +1,7 @@
 // Acceso a Turso (libSQL). Solo se usa en el servidor (Route Handlers y Server Actions).
 
 import { createClient, type Client, type InStatement, type Row } from "@libsql/client";
-import type { DocStatus, Flow, Material, NodeState } from "./flow-definition";
+import { upstreamSteps, type DocStatus, type Flow, type Material, type NodeState } from "./flow-definition";
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   id          TEXT PRIMARY KEY,
@@ -11,7 +11,8 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   updated_at  INTEGER NOT NULL,
   nodes       TEXT NOT NULL DEFAULT '{}',
   links       TEXT NOT NULL DEFAULT '{}',
-  doc_status  TEXT NOT NULL DEFAULT '{}'
+  doc_status  TEXT NOT NULL DEFAULT '{}',
+  closed_ends TEXT NOT NULL DEFAULT '[]'
 )`;
 
 const MATERIALS_SCHEMA = `CREATE TABLE IF NOT EXISTS materials (
@@ -32,21 +33,26 @@ export function isDbConfigured() {
   return Boolean(process.env.TURSO_DATABASE_URL);
 }
 
+/** Agrega una columna si falta (bases creadas con una versión anterior del esquema). */
+async function ensureColumn(c: Client, name: string, ddl: string) {
+  const cols = await c.execute("PRAGMA table_info(flows)");
+  if (cols.rows.some((r) => r.name === name)) return;
+  try {
+    await c.execute(ddl);
+  } catch (e) {
+    // Otra instancia pudo agregarla al mismo tiempo.
+    if (!String(e).includes("duplicate column")) throw e;
+  }
+}
+
 /** Crea las tablas y agrega columnas nuevas a bases creadas con versiones anteriores. */
 async function migrate(c: Client) {
   await c.batch(
     [SCHEMA, MATERIALS_SCHEMA, "CREATE INDEX IF NOT EXISTS materials_flow ON materials (flow_id)"],
     "write",
   );
-  const cols = await c.execute("PRAGMA table_info(flows)");
-  if (!cols.rows.some((r) => r.name === "doc_status")) {
-    try {
-      await c.execute("ALTER TABLE flows ADD COLUMN doc_status TEXT NOT NULL DEFAULT '{}'");
-    } catch (e) {
-      // Otra instancia pudo agregarla al mismo tiempo.
-      if (!String(e).includes("duplicate column")) throw e;
-    }
-  }
+  await ensureColumn(c, "doc_status", "ALTER TABLE flows ADD COLUMN doc_status TEXT NOT NULL DEFAULT '{}'");
+  await ensureColumn(c, "closed_ends", "ALTER TABLE flows ADD COLUMN closed_ends TEXT NOT NULL DEFAULT '[]'");
 }
 
 /** Cliente perezoso: no se crea en el build y prepara las tablas la primera vez. */
@@ -76,6 +82,15 @@ function parseJson<T>(v: unknown): T {
   }
 }
 
+function parseJsonArray<T>(v: unknown): T[] {
+  try {
+    const parsed = JSON.parse(String(v ?? "[]"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function toFlow(r: Row): Flow {
   return {
     id: String(r.id),
@@ -86,6 +101,7 @@ function toFlow(r: Row): Flow {
     nodes: parseJson<Record<string, NodeState>>(r.nodes),
     links: parseJson<Record<string, string>>(r.links),
     docs: parseJson<Record<string, DocStatus>>(r.doc_status),
+    closedEnds: parseJsonArray<string>(r.closed_ends),
   };
 }
 
@@ -133,8 +149,8 @@ export async function insertFlows(flows: Flow[]) {
   await (await db()).batch(
     flows.flatMap((f) => [
       {
-        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status, closed_ends)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           f.id,
           f.name,
@@ -144,6 +160,7 @@ export async function insertFlows(flows: Flow[]) {
           JSON.stringify(f.nodes),
           JSON.stringify(f.links ?? {}),
           JSON.stringify(f.docs ?? {}),
+          JSON.stringify(f.closedEnds ?? []),
         ],
       },
       ...(f.materials ?? []).map((m) => materialInsert(f.id, m, true)),
@@ -215,6 +232,62 @@ export async function setDocLink(id: string, docKey: string, url: string | null)
 /** "empty" es el estado por defecto, así que se guarda quitando la clave. */
 export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
   await setJsonKey("doc_status", id, docKey, status === "empty" ? null : status);
+}
+
+/* ================= finales del flujo ================= */
+
+function nodePatchStmt(flowId: string, nodeId: string, s: "done" | "todo"): InStatement {
+  const path = jsonPath(nodeId);
+  return {
+    sql: `UPDATE flows
+          SET nodes = json_set(nodes, ?, json(json_patch(coalesce(json_extract(nodes, ?), '{}'), ?)))
+          WHERE id = ?`,
+    args: [path, path, JSON.stringify({ s }), flowId],
+  };
+}
+
+/** Cierra un final: marca "done" todos los pasos previos a él. */
+export async function closeEnd(id: string, endId: string) {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT closed_ends FROM flows WHERE id = ?", args: [id] });
+  if (!cur.rows.length) return;
+  const closed = new Set(parseJsonArray<string>(cur.rows[0].closed_ends));
+  closed.add(endId);
+  await c.batch(
+    [
+      ...upstreamSteps(endId).map((sid) => nodePatchStmt(id, sid, "done")),
+      {
+        sql: "UPDATE flows SET closed_ends = ?, updated_at = ? WHERE id = ?",
+        args: [JSON.stringify([...closed]), Date.now(), id],
+      },
+    ],
+    "write",
+  );
+}
+
+/**
+ * Reabre un final: vuelve a "todo" los pasos que solo llevaban a él (los que también
+ * llevan a otro final que sigue cerrado se dejan como están).
+ */
+export async function reopenEnd(id: string, endId: string) {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT closed_ends FROM flows WHERE id = ?", args: [id] });
+  if (!cur.rows.length) return;
+  const closedArr = parseJsonArray<string>(cur.rows[0].closed_ends);
+  if (!closedArr.includes(endId)) return;
+  const stillClosed = closedArr.filter((e) => e !== endId);
+  const protectedByOthers = new Set(stillClosed.flatMap(upstreamSteps));
+  const toRevert = upstreamSteps(endId).filter((sid) => !protectedByOthers.has(sid));
+  await c.batch(
+    [
+      ...toRevert.map((sid) => nodePatchStmt(id, sid, "todo")),
+      {
+        sql: "UPDATE flows SET closed_ends = ?, updated_at = ? WHERE id = ?",
+        args: [JSON.stringify(stillClosed), Date.now(), id],
+      },
+    ],
+    "write",
+  );
 }
 
 /* ================= material de apoyo ================= */

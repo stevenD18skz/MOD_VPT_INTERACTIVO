@@ -10,6 +10,7 @@ import {
   DOC_KEYS,
   EDGES,
   EDITABLE,
+  ENDS,
   GW,
   H,
   HEAD_W,
@@ -29,6 +30,7 @@ import {
   docsForStep,
   normalizeUrl,
   stepsForDoc,
+  upstreamSteps,
   laneOf,
   phaseOf,
   route,
@@ -38,6 +40,8 @@ import {
   type NodeState,
 } from "@/lib/flow-definition";
 import {
+  closeEnd,
+  reopenEnd,
   setDocLink,
   setDocStatus,
   setNodeNote,
@@ -225,6 +229,7 @@ function Board({ flow }: { flow: Flow }) {
   const links = flow.links ?? NO_LINKS;
   const docStatus = flow.docs ?? NO_DOCS;
   const linked = useMemo(() => new Set(Object.keys(links)), [links]);
+  const closedEnds = useMemo(() => new Set(flow.closedEnds ?? []), [flow.closedEnds]);
   const done = EDITABLE.filter((n) => flow.nodes[n.id]?.s === "done").length;
   const docsLinked = DOC_KEYS.filter((k) => links[k]).length;
   const docsDone = DOC_KEYS.filter((k) => docStatus[k] === "done").length;
@@ -340,7 +345,7 @@ function Board({ flow }: { flow: Flow }) {
         <div ref={sizerRef} className={styles.sizer}>
           <div ref={stageRef} className={styles.stage} style={{ width: W, height: H }}>
             <div className={styles.paper} />
-            <Diagram linked={linked} docStatus={docStatus} />
+            <Diagram linked={linked} docStatus={docStatus} closedEnds={closedEnds} />
             {EDITABLE.map((n) => (
               <StepNode
                 key={n.id}
@@ -365,6 +370,18 @@ function Board({ flow }: { flow: Flow }) {
                 onEdit={() => toggle(n.id)}
               />
             ))}
+            {ENDS.map((n) => (
+              <EndNode
+                key={n.id}
+                node={n}
+                closed={closedEnds.has(n.id)}
+                selected={openId === n.id}
+                nodeRef={(el) => {
+                  nodeEls.current[n.id] = el;
+                }}
+                onClick={() => toggle(n.id)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -374,9 +391,17 @@ function Board({ flow }: { flow: Flow }) {
           ref={popRef}
           className={styles.pop}
           role="dialog"
-          aria-label={isDoc(openNode) ? "Enlace del documento" : "Editar paso"}
+          aria-label={isEnd(openNode) ? "Cerrar o reabrir este final" : isDoc(openNode) ? "Enlace del documento" : "Editar paso"}
         >
-          {isDoc(openNode) ? (
+          {isEnd(openNode) ? (
+            <EndPanel
+              key={openNode.id}
+              flowId={flow.id}
+              node={openNode}
+              closed={closedEnds.has(openNode.id)}
+              onClose={() => setOpenId(null)}
+            />
+          ) : isDoc(openNode) ? (
             <DocPanel
               key={openNode.id}
               flowId={flow.id}
@@ -812,8 +837,13 @@ function DrawerDoc({
 }
 
 const isDoc = (n: FlowNode) => n.t === "d" || n.t === "b";
+const isEnd = (n: FlowNode) => n.t === "f";
 
-/** Zona clicable sobre un documento del diagrama: abre su enlace o permite agregarlo. */
+/**
+ * Zona sobre un documento del diagrama. Con enlace: clic izquierdo lo abre en una
+ * pestaña nueva (con una pista al pasar el mouse), clic derecho edita el enlace.
+ * Sin enlace: se deja sin decorar; un clic (izquierdo o derecho) abre el editor.
+ */
 function ArtifactNode({
   node,
   url,
@@ -842,37 +872,59 @@ function ArtifactNode({
             target="_blank"
             rel="noopener noreferrer"
             className={styles.artHit}
-            title={`Abrir en nueva pestaña: ${url}`}
-            aria-label={`Abrir ${node.l} en una nueva pestaña`}
-          >
-            <span className={styles.artIcon} aria-hidden>
-              ↗
-            </span>
-          </a>
-          <button
-            type="button"
-            className={styles.artEdit}
-            onClick={onEdit}
-            title="Editar enlace"
-            aria-label={`Editar enlace de ${node.l}`}
-          >
-            ✎
-          </button>
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onEdit();
+            }}
+            title="Clic derecho para editar el enlace"
+            aria-label={`Abrir ${node.l} en una nueva pestaña. Clic derecho para editar el enlace.`}
+          />
+          <span className={styles.artTip} aria-hidden>
+            Abrir ↗
+          </span>
         </>
       ) : (
         <button
           type="button"
           className={styles.artHit}
           onClick={onEdit}
-          title="Agregar enlace"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onEdit();
+          }}
           aria-label={`Agregar enlace a ${node.l}`}
-        >
-          <span className={styles.artIcon} aria-hidden>
-            +
-          </span>
-        </button>
+        />
       )}
     </div>
+  );
+}
+
+/** Círculo "Fin": un clic lo cierra (marca listos los pasos previos) o abre su detalle si ya está cerrado. */
+function EndNode({
+  node,
+  closed,
+  selected,
+  nodeRef,
+  onClick,
+}: {
+  node: FlowNode;
+  closed: boolean;
+  selected: boolean;
+  nodeRef: (el: HTMLButtonElement | null) => void;
+  onClick: () => void;
+}) {
+  const d = dims(node);
+  return (
+    <button
+      type="button"
+      ref={nodeRef}
+      data-node
+      className={`${styles.endHit} ${closed ? styles.endClosed : ""} ${selected ? styles.endSel : ""}`}
+      style={{ left: node.x - d.w / 2, top: node.y - d.h / 2, width: d.w, height: d.h }}
+      onClick={onClick}
+      aria-label={closed ? `Final cerrado: ${node.l}. Ver detalle o reabrir.` : `Cerrar este final: ${node.l}`}
+      title={closed ? "Final cerrado · clic para ver detalle" : "Clic para cerrar este final"}
+    />
   );
 }
 
@@ -980,6 +1032,81 @@ function DocPanel({
             Cerrar
           </button>
         </span>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Popover de un evento "Fin": cerrarlo marca en Done todos los pasos previos a él
+ * (la automatización llegó hasta aquí); se puede deshacer en cualquier momento.
+ */
+function EndPanel({
+  flowId,
+  node,
+  closed,
+  onClose,
+}: {
+  flowId: string;
+  node: FlowNode;
+  closed: boolean;
+  onClose: () => void;
+}) {
+  const [flash, setFlash] = useFlash();
+  const steps = useMemo(() => upstreamSteps(node.id), [node.id]);
+
+  return (
+    <>
+      <p className={styles.ttl}>{node.l}</p>
+      <div className={styles.crumb}>
+        {phaseOf(node.x)} · {laneOf(node.y)}
+      </div>
+      <p className={styles.lbl}>Estado</p>
+      {closed ? (
+        <>
+          <p className={styles.hint} style={{ margin: "0 0 10px" }}>
+            ✓ Terminado: la automatización llegó hasta aquí y los {steps.length} pasos previos quedaron en Done.
+          </p>
+          <button
+            type="button"
+            className={styles.tb}
+            onClick={() => {
+              reopenEnd(flowId, node.id);
+              setFlash("Reabierto");
+            }}
+          >
+            Deshacer
+          </button>
+          <p className={styles.hint}>
+            Los pasos que solo llevaban a este final vuelven a TODO. Los que también llevan a otro final que
+            sigue cerrado se dejan como están.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className={styles.hint} style={{ margin: "0 0 10px" }}>
+            Marca que la automatización terminó aquí: los {steps.length} pasos previos a este final quedarán en
+            Done. Se puede deshacer después.
+          </p>
+          <button
+            type="button"
+            className={styles.primary}
+            onClick={() => {
+              closeEnd(flowId, node.id);
+              setFlash("Marcado como terminado");
+            }}
+          >
+            Marcar como terminado
+          </button>
+        </>
+      )}
+      <div className={styles.foot}>
+        <span className={`${styles.saved} ${flash ? styles.ok : ""}`} role="status">
+          {flash && `✓ ${flash}`}
+        </span>
+        <button type="button" className={styles.tb} onClick={onClose}>
+          Cerrar
+        </button>
       </div>
     </>
   );
@@ -1152,9 +1279,11 @@ const DOC_COLORS: Record<DocStatus, { fill: string; stroke: string }> = {
 const Diagram = memo(function Diagram({
   linked,
   docStatus,
+  closedEnds,
 }: {
   linked: Set<string>;
   docStatus: Record<string, DocStatus>;
+  closedEnds: Set<string>;
 }) {
   const poolTop = LANES[0].y0;
   const poolBot = LANES[LANES.length - 1].y1;
@@ -1401,11 +1530,22 @@ const Diagram = memo(function Diagram({
           }
           if (n.t === "e" || n.t === "f" || n.t === "k") {
             const r = n.t === "k" ? KR : ER;
-            const fill = n.t === "e" ? "#C5E0B4" : n.t === "f" ? "#F4B6B6" : "#FFF2CC";
-            const line = n.t === "e" ? "#548235" : n.t === "f" ? "#C00000" : "#BF8F00";
+            const closed = n.t === "f" && closedEnds.has(n.id);
+            const fill = closed ? "var(--done-fill)" : n.t === "e" ? "#C5E0B4" : n.t === "f" ? "#F4B6B6" : "#FFF2CC";
+            const line = closed ? "var(--done-line)" : n.t === "e" ? "#548235" : n.t === "f" ? "#C00000" : "#BF8F00";
             return (
               <g key={n.id}>
                 <circle cx={n.x} cy={n.y} r={r} fill={fill} stroke={line} strokeWidth={n.t === "f" ? 4 : 2.6} />
+                {closed && (
+                  <path
+                    d={`M${n.x - 9},${n.y} L${n.x - 2},${n.y + 7} L${n.x + 10},${n.y - 8}`}
+                    stroke="#fff"
+                    strokeWidth={4}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                )}
                 {n.t === "k" && (
                   <>
                     <circle cx={n.x} cy={n.y} r={r - 6} fill="none" stroke={line} strokeWidth={2} />

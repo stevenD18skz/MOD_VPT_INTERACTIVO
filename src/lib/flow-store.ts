@@ -4,14 +4,16 @@
 // - Sin Turso ("local"): todo se guarda en localStorage, solo en este navegador.
 
 import { useSyncExternalStore } from "react";
-import type { DocStatus, Flow, Material, Status } from "./flow-definition";
+import { upstreamSteps, type DocStatus, type Flow, type Material, type Status } from "./flow-definition";
 import {
   addFileMaterial as remoteAddFile,
   addLinkMaterial as remoteAddLink,
+  closeEnd as remoteCloseEnd,
   deleteMaterial as remoteDeleteMaterial,
   createFlow as remoteCreate,
   deleteFlow as remoteDelete,
   importFlows as remoteImport,
+  reopenEnd as remoteReopenEnd,
   setDocLink as remoteSetDocLink,
   setDocStatus as remoteSetDocStatus,
   setNodeNote as remoteSetNote,
@@ -276,4 +278,41 @@ export function setDocStatus(id: string, docKey: string, status: DocStatus) {
     return { ...f, docs };
   });
   persist(() => remoteSetDocStatus(id, docKey, status));
+}
+
+/* ================= finales del flujo ================= */
+
+/** Cierra un final: la automatización "llegó hasta aquí", así que sus pasos previos pasan a Done. */
+export function closeEnd(flowId: string, endId: string) {
+  const stepIds = upstreamSteps(endId);
+  updateFlow(flowId, (f) => ({
+    ...f,
+    nodes: {
+      ...f.nodes,
+      ...Object.fromEntries(stepIds.map((id) => [id, { ...f.nodes[id], s: "done" as Status }])),
+    },
+    closedEnds: [...new Set([...(f.closedEnds ?? []), endId])],
+  }));
+  persist(() => remoteCloseEnd(flowId, endId));
+}
+
+/**
+ * Reabre un final. Vuelve a TODO los pasos que solo llevaban a él; los que también
+ * llevan a otro final que sigue cerrado se dejan tal cual (no se pisa ese progreso).
+ */
+export function reopenEnd(flowId: string, endId: string) {
+  updateFlow(flowId, (f) => {
+    const stillClosed = (f.closedEnds ?? []).filter((e) => e !== endId);
+    const protectedByOthers = new Set(stillClosed.flatMap(upstreamSteps));
+    const toRevert = upstreamSteps(endId).filter((id) => !protectedByOthers.has(id));
+    return {
+      ...f,
+      nodes: {
+        ...f.nodes,
+        ...Object.fromEntries(toRevert.map((id) => [id, { ...f.nodes[id], s: "todo" as Status }])),
+      },
+      closedEnds: stillClosed,
+    };
+  });
+  persist(() => remoteReopenEnd(flowId, endId));
 }
