@@ -415,9 +415,21 @@
   opacity: 1;
   transform: translate(-50%, 100%) translateY(4px);
 }
-/* Sin enlace: se dejan sin decorar; el cursor ya indica que se puede hacer clic. */
+/* Sin enlace: al pasar el mouse se resalta con un contorno punteado y una
+   pista, para invitar a agregar el enlace (antes no había ninguna señal). */
 .art:not(.artLinked) .artHit {
   cursor: pointer;
+}
+.art:not(.artLinked) .artHit:hover,
+.art:not(.artLinked) .artHit:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  outline: 2px dashed var(--accent);
+  outline-offset: 1px;
+}
+.art:not(.artLinked) .artHit:hover ~ .artTip,
+.art:not(.artLinked) .artHit:focus-visible ~ .artTip {
+  opacity: 1;
+  transform: translate(-50%, 100%) translateY(4px);
 }
 .artSel .artHit {
   box-shadow: 0 0 0 3px rgba(46, 117, 182, 0.45);

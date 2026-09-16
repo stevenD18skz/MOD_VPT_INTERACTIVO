@@ -495,6 +495,53 @@ export function gatewayBranches(gatewayId: string): GatewayBranch[] {
   return branches;
 }
 
+function inDegree(nodeId: string): number {
+  return EDGES.filter((e) => e[2] === nodeId).length;
+}
+
+/**
+ * Nodos que pertenecen EXCLUSIVAMENTE a una rama de compuerta, caminando hacia
+ * adelante desde su destino. Se detiene al reencontrarse con un nodo también
+ * alcanzable por otro camino (reconvergencia con el resto del flujo) o al
+ * llegar a otra compuerta/paralelo (esa es una decisión aparte, no se
+ * arrastra). Se usa para atenuar y deshabilitar la rama que NO se tomó, sin
+ * tocar los nodos que también sirven al camino principal.
+ */
+export function branchLock(startId: string): Set<string> {
+  const locked = new Set<string>();
+  let cur: string | undefined = startId;
+  let first = true;
+  while (cur && !locked.has(cur)) {
+    const node = BY_ID[cur];
+    if (!node) break;
+    if (!first && inDegree(cur) > 1) break;
+    locked.add(cur);
+    if (node.t === "g" || node.t === "p") break;
+    first = false;
+    const outs = EDGES.filter((e) => e[0] === cur);
+    if (outs.length !== 1) break;
+    cur = outs[0][2];
+  }
+  return locked;
+}
+
+/**
+ * Unión de los nodos bloqueados por todas las respuestas de compuertas ya
+ * guardadas (la rama que NO se eligió en cada una). No cubre el bloqueo por
+ * cierre de un Fin: eso lo resuelve `upstreamPath` a partir de `closed`.
+ */
+export function branchLockedNodes(gatewayAnswers: Record<string, string>): Set<string> {
+  const locked = new Set<string>();
+  for (const gw of GATEWAYS) {
+    const answer = gatewayAnswers[gw.id];
+    if (!answer) continue;
+    const other = gatewayBranches(gw.id).find((b) => b.target !== answer);
+    if (!other) continue;
+    for (const id of branchLock(other.target)) locked.add(id);
+  }
+  return locked;
+}
+
 /** Parte un texto en líneas de como máximo `max` caracteres (por palabras). */
 export function wrapWords(text: string, max: number): string[] {
   const lines: string[] = [];

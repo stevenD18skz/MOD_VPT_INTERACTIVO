@@ -27,6 +27,7 @@ import {
   DOC_STATUSES,
   PHASE_DOCS,
   W,
+  branchLockedNodes,
   dims,
   docsForStep,
   gatewayBranches,
@@ -245,8 +246,12 @@ function Board({ flow }: { flow: Flow }) {
   const closed = flow.closed ?? null;
   // Camino ganador hacia el final cerrado: todo lo que NO esté aquí se atenúa y se bloquea.
   const closedPath = useMemo(() => (closed ? upstreamPath(closed.endId) : null), [closed]);
-  const isLocked = (id: string) => closed !== null && id !== closed.endId && !closedPath!.nodes.has(id);
   const gatewayAnswers = flow.gatewayAnswers ?? NO_ANSWERS;
+  // Ramas descartadas por respuestas de compuertas ya guardadas (sin que el flujo
+  // esté cerrado del todo): se atenúan y se bloquean igual que el resto de un cierre.
+  const branchLocked = useMemo(() => branchLockedNodes(gatewayAnswers), [gatewayAnswers]);
+  const isLocked = (id: string) =>
+    closed !== null ? id !== closed.endId && !closedPath!.nodes.has(id) : branchLocked.has(id);
   // "Respondida" para el badge del rombo: si el cierre actual ya la resolvió, manda eso
   // (una respuesta vieja guardada no cuenta si quedó bloqueada por ese cierre).
   const isGatewayAnswered = (id: string) => {
@@ -374,6 +379,7 @@ function Board({ flow }: { flow: Flow }) {
               closed={closed}
               closedPath={closedPath}
               gatewayAnswers={gatewayAnswers}
+              branchLocked={branchLocked}
             />
             {EDITABLE.map((n) => (
               <StepNode
@@ -405,7 +411,7 @@ function Board({ flow }: { flow: Flow }) {
                 key={n.id}
                 node={n}
                 active={closed?.endId === n.id}
-                dimmed={closed !== null && closed.endId !== n.id}
+                dimmed={isLocked(n.id)}
                 selected={openId === n.id}
                 nodeRef={(el) => {
                   nodeEls.current[n.id] = el;
@@ -451,6 +457,7 @@ function Board({ flow }: { flow: Flow }) {
               flowId={flow.id}
               node={openNode}
               closed={closed}
+              locked={isLocked(openNode.id)}
               onClose={() => setOpenId(null)}
             />
           ) : isGateway(openNode) ? (
@@ -461,6 +468,7 @@ function Board({ flow }: { flow: Flow }) {
               closed={closed}
               closedPath={closedPath}
               gatewayAnswers={gatewayAnswers}
+              locked={isLocked(openNode.id)}
               onClose={() => setOpenId(null)}
               onGo={focusNode}
             />
@@ -660,9 +668,9 @@ function StepEditor({
       </div>
       {locked && (
         <p className={styles.hint} style={{ margin: "0 0 10px" }}>
-          🔒 Deshabilitado: el flujo se cerró por «Fin»
-          {closedEndNode ? ` en ${phaseOf(closedEndNode.x)} · ${laneOf(closedEndNode.y)}` : ""}, que no pasa por
-          aquí. Solo se puede ver.
+          {closedEndNode
+            ? `🔒 Deshabilitado: el flujo se cerró por «Fin» en ${phaseOf(closedEndNode.x)} · ${laneOf(closedEndNode.y)}, que no pasa por aquí. Solo se puede ver.`
+            : "🔒 Deshabilitado: quedó fuera de la rama elegida en una compuerta (Sí/No) de este flujo. Solo se puede ver."}
         </p>
       )}
       <p className={styles.lbl}>Estado</p>
@@ -1031,16 +1039,22 @@ function ArtifactNode({
           </span>
         </>
       ) : (
-        <button
-          type="button"
-          className={styles.artHit}
-          onClick={onEdit}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            onEdit();
-          }}
-          aria-label={`Agregar enlace a ${node.l}`}
-        />
+        <>
+          <button
+            type="button"
+            className={styles.artHit}
+            onClick={onEdit}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onEdit();
+            }}
+            title="Clic para agregar el enlace"
+            aria-label={`Agregar enlace a ${node.l}`}
+          />
+          <span className={styles.artTip} aria-hidden>
+            + Agregar enlace
+          </span>
+        </>
       )}
     </div>
   );
@@ -1079,10 +1093,10 @@ function EndNode({
         active
           ? `Final cerrado: ${node.l}. Ver detalle o reabrir.`
           : dimmed
-            ? `${node.l} (deshabilitado: el flujo ya terminó por otro camino)`
+            ? `${node.l} (deshabilitado: no aplica en el camino actual)`
             : `Cerrar este final: ${node.l}`
       }
-      title={active ? "Final cerrado · clic para ver detalle" : dimmed ? "El flujo ya terminó por otro camino" : "Clic para cerrar este final"}
+      title={active ? "Final cerrado · clic para ver detalle" : dimmed ? "No aplica en el camino actual" : "Clic para cerrar este final"}
     />
   );
 }
@@ -1112,8 +1126,8 @@ function GatewayNode({
       className={`${styles.gwHit} ${answered ? styles.gwAnswered : ""} ${selected ? styles.endSel : ""} ${dimmed ? styles.dimmed : ""}`}
       style={{ left: node.x - d.w / 2, top: node.y - d.h / 2, width: d.w, height: d.h }}
       onClick={onClick}
-      aria-label={`${node.l}${answered ? " (respondida)" : ""}${dimmed ? " (deshabilitada: el flujo ya terminó por otro camino)" : ""}`}
-      title={dimmed ? "El flujo ya terminó por otro camino" : answered ? "Ya respondida · clic para ver o cambiar" : "Clic para responder"}
+      aria-label={`${node.l}${answered ? " (respondida)" : ""}${dimmed ? " (deshabilitada: no aplica en el camino actual)" : ""}`}
+      title={dimmed ? "No aplica en el camino actual" : answered ? "Ya respondida · clic para ver o cambiar" : "Clic para responder"}
     />
   );
 }
@@ -1238,11 +1252,13 @@ function EndPanel({
   flowId,
   node,
   closed,
+  locked,
   onClose,
 }: {
   flowId: string;
   node: FlowNode;
   closed: ClosedState | null;
+  locked: boolean;
   onClose: () => void;
 }) {
   const [flash, setFlash] = useFlash();
@@ -1250,6 +1266,7 @@ function EndPanel({
   const isActive = closed?.endId === node.id;
   const blockedByOther = closed !== null && !isActive;
   const otherEnd = blockedByOther ? BY_ID[closed.endId] : null;
+  const blockedByBranch = closed === null && locked;
 
   return (
     <>
@@ -1283,6 +1300,11 @@ function EndPanel({
         <p className={styles.hint} style={{ margin: 0 }}>
           Este flujo ya se cerró por «Fin» en {phaseOf(otherEnd!.x)} · {laneOf(otherEnd!.y)}. Deshaz ese cierre
           para poder cerrar por acá.
+        </p>
+      ) : blockedByBranch ? (
+        <p className={styles.hint} style={{ margin: 0 }}>
+          🔒 Deshabilitado: este final quedó fuera de la rama elegida en una compuerta (Sí/No) anterior. Solo se
+          puede ver.
         </p>
       ) : (
         <>
@@ -1325,6 +1347,7 @@ function GatewayPanel({
   closed,
   closedPath,
   gatewayAnswers,
+  locked,
   onClose,
   onGo,
 }: {
@@ -1333,6 +1356,7 @@ function GatewayPanel({
   closed: ClosedState | null;
   closedPath: UpstreamPath | null;
   gatewayAnswers: Record<string, string>;
+  locked: boolean;
   onClose: () => void;
   onGo: (id: string) => void;
 }) {
@@ -1340,6 +1364,7 @@ function GatewayPanel({
   const branches = useMemo(() => gatewayBranches(node.id), [node.id]);
   const resolvedByClosure = closed !== null && closedPath!.nodes.has(node.id);
   const blockedByClosure = closed !== null && !resolvedByClosure;
+  const blockedByBranch = closed === null && locked;
   const savedAnswer = gatewayAnswers[node.id];
 
   const choose = (target: string) => {
@@ -1363,6 +1388,10 @@ function GatewayPanel({
         <p className={styles.hint} style={{ margin: 0 }}>
           🔒 Deshabilitada: el flujo se cerró por «Fin» en {phaseOf(BY_ID[closed!.endId].x)} ·{" "}
           {laneOf(BY_ID[closed!.endId].y)}, que no pasa por aquí.
+        </p>
+      ) : blockedByBranch ? (
+        <p className={styles.hint} style={{ margin: 0 }}>
+          🔒 Deshabilitada: quedó fuera de la rama elegida en una compuerta (Sí/No) anterior. Solo se puede ver.
         </p>
       ) : resolvedByClosure ? (
         <p className={styles.hint} style={{ margin: 0 }}>
@@ -1588,23 +1617,26 @@ const Diagram = memo(function Diagram({
   closed,
   closedPath,
   gatewayAnswers,
+  branchLocked,
 }: {
   linked: Set<string>;
   docStatus: Record<string, DocStatus>;
   closed: ClosedState | null;
   closedPath: UpstreamPath | null;
   gatewayAnswers: Record<string, string>;
+  branchLocked: Set<string>;
 }) {
   const closedEndId = closed?.endId ?? null;
   // El final activo nunca se atenúa (upstreamPath no se incluye a sí mismo en `nodes`).
-  const dimNode = (id: string) => closedPath !== null && id !== closedEndId && !closedPath.nodes.has(id);
-  // Una rama de compuerta se atenúa por el cierre actual, o (si esa compuerta no quedó
-  // resuelta por él) por una respuesta guardada que descartó esa rama.
+  // Sin cierre, se atenúa lo que quedó fuera de la rama elegida en alguna compuerta.
+  const dimNode = (id: string) =>
+    closedPath !== null ? id !== closedEndId && !closedPath.nodes.has(id) : branchLocked.has(id);
+  // Una flecha se atenúa por el cierre actual, o (sin cierre) si conecta con un nodo
+  // que quedó bloqueado por la rama descartada de alguna compuerta.
   const dimEdge = (i: number) => {
     if (closedPath !== null) return !closedPath.edges.has(i);
     const [from, , to] = EDGES[i];
-    const answer = gatewayAnswers[from];
-    return answer !== undefined && answer !== to;
+    return branchLocked.has(from) || branchLocked.has(to);
   };
   const poolTop = LANES[0].y0;
   const poolBot = LANES[LANES.length - 1].y1;
