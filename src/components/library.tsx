@@ -56,7 +56,7 @@ export function Library() {
   ];
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-svwd flex-col">
       <header className="border-b border-line bg-chrome">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -83,7 +83,7 @@ export function Library() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {mode === "offline" ? (
           <OfflineNotice />
         ) : flows === null ? (
