@@ -10,8 +10,10 @@ import {
   DOC_STATUSES,
   EDITABLE,
   ENDS,
+  GATEWAYS,
   MAX_MATERIAL_BYTES,
   STATUSES,
+  gatewayBranches,
   normalizeUrl,
   type ClosedState,
   type DocStatus,
@@ -26,6 +28,10 @@ const DOC_SET = new Set(DOC_KEYS);
 const STATUS_SET = new Set<string>(STATUSES.map((s) => s.key));
 const DOC_STATUS_SET = new Set<string>(DOC_STATUSES.map((s) => s.key));
 const END_IDS = new Set(ENDS.map((n) => n.id));
+/** Por compuerta, los ids de nodo a los que puede llevar alguna de sus ramas. */
+const GATEWAY_TARGETS = new Map<string, Set<string>>(
+  GATEWAYS.map((g) => [g.id, new Set(gatewayBranches(g.id).map((b) => b.target))]),
+);
 const MAX_NAME = 200;
 const MAX_DESC = 2000;
 const MAX_NOTE = 20000;
@@ -79,6 +85,15 @@ function cleanClosedState(raw: unknown): ClosedState | null {
   return { endId, snapshot: cleanNodes((raw as { snapshot?: unknown }).snapshot) };
 }
 
+function cleanGatewayAnswers(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [gatewayId, target] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof target === "string" && GATEWAY_TARGETS.get(gatewayId)?.has(target)) out[gatewayId] = target;
+  }
+  return out;
+}
+
 /** Del navegador solo pueden venir enlaces (los archivos exigen Turso + Blob). */
 function cleanMaterials(raw: unknown): Material[] {
   if (!Array.isArray(raw)) return [];
@@ -128,6 +143,7 @@ export async function importFlows(flows: Flow[]) {
       docs: cleanDocs(f.docs),
       materials: cleanMaterials(f.materials),
       closed: cleanClosedState(f.closed),
+      gatewayAnswers: cleanGatewayAnswers(f.gatewayAnswers),
     };
   });
   await db.insertFlows(clean);
@@ -185,6 +201,15 @@ export async function closeEnd(id: string, endId: string) {
 export async function reopenEnd(id: string, endId: string) {
   check(isId(id) && END_IDS.has(endId));
   await db.reopenEnd(id, endId);
+}
+
+/* ================= compuertas (Sí/No…) ================= */
+
+/** `target` debe ser el destino de alguna rama real de esa compuerta; `null` borra la respuesta. */
+export async function setGatewayAnswer(id: string, gatewayId: string, target: string | null) {
+  check(isId(id) && GATEWAY_TARGETS.has(gatewayId));
+  check(target === null || GATEWAY_TARGETS.get(gatewayId)!.has(target));
+  await db.setGatewayAnswer(id, gatewayId, target);
 }
 
 /* ================= material de apoyo ================= */

@@ -16,10 +16,11 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS flows (
   description  TEXT NOT NULL DEFAULT '',
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL,
-  nodes        TEXT NOT NULL DEFAULT '{}',
-  links        TEXT NOT NULL DEFAULT '{}',
-  doc_status   TEXT NOT NULL DEFAULT '{}',
-  closed_state TEXT NOT NULL DEFAULT 'null'
+  nodes           TEXT NOT NULL DEFAULT '{}',
+  links           TEXT NOT NULL DEFAULT '{}',
+  doc_status      TEXT NOT NULL DEFAULT '{}',
+  closed_state    TEXT NOT NULL DEFAULT 'null',
+  gateway_answers TEXT NOT NULL DEFAULT '{}'
 )`;
 
 const MATERIALS_SCHEMA = `CREATE TABLE IF NOT EXISTS materials (
@@ -62,6 +63,11 @@ async function migrate(c: Client) {
   // closed_ends: columna de una versión anterior (varios finales cerrados a la vez); ya
   // no se usa, se reemplazó por closed_state (un solo final activo, con snapshot).
   await ensureColumn(c, "closed_state", "ALTER TABLE flows ADD COLUMN closed_state TEXT NOT NULL DEFAULT 'null'");
+  await ensureColumn(
+    c,
+    "gateway_answers",
+    "ALTER TABLE flows ADD COLUMN gateway_answers TEXT NOT NULL DEFAULT '{}'",
+  );
 }
 
 /** Cliente perezoso: no se crea en el build y prepara las tablas la primera vez. */
@@ -113,6 +119,7 @@ function toFlow(r: Row): Flow {
     links: parseJson<Record<string, string>>(r.links),
     docs: parseJson<Record<string, DocStatus>>(r.doc_status),
     closed: parseClosedState(r.closed_state),
+    gatewayAnswers: parseJson<Record<string, string>>(r.gateway_answers),
   };
 }
 
@@ -160,8 +167,8 @@ export async function insertFlows(flows: Flow[]) {
   await (await db()).batch(
     flows.flatMap((f) => [
       {
-        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status, closed_state)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT OR IGNORE INTO flows (id, name, description, created_at, updated_at, nodes, links, doc_status, closed_state, gateway_answers)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [
           f.id,
           f.name,
@@ -172,6 +179,7 @@ export async function insertFlows(flows: Flow[]) {
           JSON.stringify(f.links ?? {}),
           JSON.stringify(f.docs ?? {}),
           JSON.stringify(f.closed ?? null),
+          JSON.stringify(f.gatewayAnswers ?? {}),
         ],
       },
       ...(f.materials ?? []).map((m) => materialInsert(f.id, m, true)),
@@ -221,7 +229,12 @@ export async function patchNode(id: string, nodeId: string, patch: NodeState) {
 }
 
 /** Asigna (o quita, con `null`) una clave de un objeto JSON de la fila. */
-async function setJsonKey(column: "links" | "doc_status", id: string, key: string, value: string | null) {
+async function setJsonKey(
+  column: "links" | "doc_status" | "gateway_answers",
+  id: string,
+  key: string,
+  value: string | null,
+) {
   const path = jsonPath(key);
   await (await db()).execute(
     value
@@ -243,6 +256,11 @@ export async function setDocLink(id: string, docKey: string, url: string | null)
 /** "empty" es el estado por defecto, así que se guarda quitando la clave. */
 export async function setDocStatus(id: string, docKey: string, status: DocStatus) {
   await setJsonKey("doc_status", id, docKey, status === "empty" ? null : status);
+}
+
+/** Respuesta de una compuerta que NO lleva directo a un final (`target` = null la borra). */
+export async function setGatewayAnswer(id: string, gatewayId: string, target: string | null) {
+  await setJsonKey("gateway_answers", id, gatewayId, target);
 }
 
 /* ================= finales del flujo ================= */

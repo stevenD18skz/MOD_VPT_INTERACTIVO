@@ -11,6 +11,7 @@ import {
   EDGES,
   EDITABLE,
   ENDS,
+  GATEWAYS,
   GW,
   H,
   HEAD_W,
@@ -28,6 +29,8 @@ import {
   W,
   dims,
   docsForStep,
+  gatewayBranches,
+  leadsToEnd,
   normalizeUrl,
   stepsForDoc,
   upstreamPath,
@@ -47,6 +50,7 @@ import {
   reopenEnd,
   setDocLink,
   setDocStatus,
+  setGatewayAnswer,
   setNodeNote,
   setNodeStatus,
   useFlows,
@@ -236,6 +240,13 @@ function Board({ flow }: { flow: Flow }) {
   // Camino ganador hacia el final cerrado: todo lo que NO esté aquí se atenúa y se bloquea.
   const closedPath = useMemo(() => (closed ? upstreamPath(closed.endId) : null), [closed]);
   const isLocked = (id: string) => closed !== null && id !== closed.endId && !closedPath!.nodes.has(id);
+  const gatewayAnswers = flow.gatewayAnswers ?? NO_ANSWERS;
+  // "Respondida" para el badge del rombo: si el cierre actual ya la resolvió, manda eso
+  // (una respuesta vieja guardada no cuenta si quedó bloqueada por ese cierre).
+  const isGatewayAnswered = (id: string) => {
+    if (closed) return closedPath!.nodes.has(id);
+    return Boolean(gatewayAnswers[id]);
+  };
   const done = EDITABLE.filter((n) => flow.nodes[n.id]?.s === "done").length;
   const docsLinked = DOC_KEYS.filter((k) => links[k]).length;
   const docsDone = DOC_KEYS.filter((k) => docStatus[k] === "done").length;
@@ -351,7 +362,13 @@ function Board({ flow }: { flow: Flow }) {
         <div ref={sizerRef} className={styles.sizer}>
           <div ref={stageRef} className={styles.stage} style={{ width: W, height: H }}>
             <div className={styles.paper} />
-            <Diagram linked={linked} docStatus={docStatus} closed={closed} closedPath={closedPath} />
+            <Diagram
+              linked={linked}
+              docStatus={docStatus}
+              closed={closed}
+              closedPath={closedPath}
+              gatewayAnswers={gatewayAnswers}
+            />
             {EDITABLE.map((n) => (
               <StepNode
                 key={n.id}
@@ -390,6 +407,19 @@ function Board({ flow }: { flow: Flow }) {
                 onClick={() => toggle(n.id)}
               />
             ))}
+            {GATEWAYS.map((n) => (
+              <GatewayNode
+                key={n.id}
+                node={n}
+                answered={isGatewayAnswered(n.id)}
+                dimmed={isLocked(n.id)}
+                selected={openId === n.id}
+                nodeRef={(el) => {
+                  nodeEls.current[n.id] = el;
+                }}
+                onClick={() => toggle(n.id)}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -399,7 +429,15 @@ function Board({ flow }: { flow: Flow }) {
           ref={popRef}
           className={styles.pop}
           role="dialog"
-          aria-label={isEnd(openNode) ? "Cerrar o reabrir este final" : isDoc(openNode) ? "Enlace del documento" : "Editar paso"}
+          aria-label={
+            isEnd(openNode)
+              ? "Cerrar o reabrir este final"
+              : isGateway(openNode)
+                ? "Responder esta compuerta"
+                : isDoc(openNode)
+                  ? "Enlace del documento"
+                  : "Editar paso"
+          }
         >
           {isEnd(openNode) ? (
             <EndPanel
@@ -408,6 +446,17 @@ function Board({ flow }: { flow: Flow }) {
               node={openNode}
               closed={closed}
               onClose={() => setOpenId(null)}
+            />
+          ) : isGateway(openNode) ? (
+            <GatewayPanel
+              key={openNode.id}
+              flowId={flow.id}
+              node={openNode}
+              closed={closed}
+              closedPath={closedPath}
+              gatewayAnswers={gatewayAnswers}
+              onClose={() => setOpenId(null)}
+              onGo={focusNode}
             />
           ) : isDoc(openNode) ? (
             <DocPanel
@@ -621,6 +670,7 @@ function StepEditor({
 /* ================= documentos con enlace ================= */
 const NO_LINKS: Record<string, string> = {};
 const NO_DOCS: Record<string, DocStatus> = {};
+const NO_ANSWERS: Record<string, string> = {};
 
 function DocGlyph() {
   return (
@@ -863,6 +913,7 @@ function DrawerDoc({
 
 const isDoc = (n: FlowNode) => n.t === "d" || n.t === "b";
 const isEnd = (n: FlowNode) => n.t === "f";
+const isGateway = (n: FlowNode) => n.t === "g";
 
 /**
  * Zona sobre un documento del diagrama. Con enlace: clic izquierdo lo abre en una
@@ -961,6 +1012,37 @@ function EndNode({
             : `Cerrar este final: ${node.l}`
       }
       title={active ? "Final cerrado · clic para ver detalle" : dimmed ? "El flujo ya terminó por otro camino" : "Clic para cerrar este final"}
+    />
+  );
+}
+
+/** Rombo de decisión (Sí/No…): un clic abre el panel para elegir qué rama se tomó. */
+function GatewayNode({
+  node,
+  answered,
+  dimmed,
+  selected,
+  nodeRef,
+  onClick,
+}: {
+  node: FlowNode;
+  answered: boolean;
+  dimmed: boolean;
+  selected: boolean;
+  nodeRef: (el: HTMLButtonElement | null) => void;
+  onClick: () => void;
+}) {
+  const d = dims(node);
+  return (
+    <button
+      type="button"
+      ref={nodeRef}
+      data-node
+      className={`${styles.gwHit} ${answered ? styles.gwAnswered : ""} ${selected ? styles.endSel : ""} ${dimmed ? styles.dimmed : ""}`}
+      style={{ left: node.x - d.w / 2, top: node.y - d.h / 2, width: d.w, height: d.h }}
+      onClick={onClick}
+      aria-label={`${node.l}${answered ? " (respondida)" : ""}${dimmed ? " (deshabilitada: el flujo ya terminó por otro camino)" : ""}`}
+      title={dimmed ? "El flujo ya terminó por otro camino" : answered ? "Ya respondida · clic para ver o cambiar" : "Clic para responder"}
     />
   );
 }
@@ -1161,6 +1243,108 @@ function EndPanel({
   );
 }
 
+/**
+ * Popover de una compuerta (Sí/No…): elegir una rama la marca respondida y, según a
+ * dónde lleve, o cierra el flujo por ese final (si llega directo a un Fin) o abre el
+ * siguiente paso de esa rama. Bloqueada si el flujo ya se cerró por otro camino.
+ */
+function GatewayPanel({
+  flowId,
+  node,
+  closed,
+  closedPath,
+  gatewayAnswers,
+  onClose,
+  onGo,
+}: {
+  flowId: string;
+  node: FlowNode;
+  closed: ClosedState | null;
+  closedPath: UpstreamPath | null;
+  gatewayAnswers: Record<string, string>;
+  onClose: () => void;
+  onGo: (id: string) => void;
+}) {
+  const [flash, setFlash] = useFlash();
+  const branches = useMemo(() => gatewayBranches(node.id), [node.id]);
+  const resolvedByClosure = closed !== null && closedPath!.nodes.has(node.id);
+  const blockedByClosure = closed !== null && !resolvedByClosure;
+  const savedAnswer = gatewayAnswers[node.id];
+
+  const choose = (target: string) => {
+    const end = leadsToEnd(target);
+    if (end) {
+      closeEnd(flowId, end);
+      onGo(end);
+    } else {
+      setGatewayAnswer(flowId, node.id, target);
+      onGo(target);
+    }
+  };
+
+  return (
+    <>
+      <p className={styles.ttl}>{node.l}</p>
+      <div className={styles.crumb}>
+        {phaseOf(node.x)} · {laneOf(node.y)}
+      </div>
+      {blockedByClosure ? (
+        <p className={styles.hint} style={{ margin: 0 }}>
+          🔒 Deshabilitada: el flujo se cerró por «Fin» en {phaseOf(BY_ID[closed!.endId].x)} ·{" "}
+          {laneOf(BY_ID[closed!.endId].y)}, que no pasa por aquí.
+        </p>
+      ) : resolvedByClosure ? (
+        <p className={styles.hint} style={{ margin: 0 }}>
+          ✓ Se respondió «{branches.find((b) => closedPath!.edges.has(b.edgeIndex))?.label || "?"}»: el flujo
+          terminó por ese camino.
+        </p>
+      ) : (
+        <>
+          <p className={styles.lbl}>Respuesta</p>
+          <p className={styles.hint} style={{ margin: "0 0 8px" }}>
+            Elige la rama que tomó esta iniciativa. Si termina en un «Fin», el flujo se marca como completado
+            (y el resto se deshabilita); si sigue de largo, te lleva al siguiente paso.
+          </p>
+          <div className={styles.states}>
+            {branches.map((b) => (
+              <button
+                key={b.edgeIndex}
+                type="button"
+                className={styles.st}
+                aria-pressed={savedAnswer === b.target}
+                onClick={() => choose(b.target)}
+              >
+                {b.label || "(sin etiqueta)"}
+              </button>
+            ))}
+          </div>
+          {savedAnswer && (
+            <button
+              type="button"
+              className={styles.danger}
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                setGatewayAnswer(flowId, node.id, null);
+                setFlash("Respuesta borrada");
+              }}
+            >
+              Borrar respuesta
+            </button>
+          )}
+        </>
+      )}
+      <div className={styles.foot}>
+        <span className={`${styles.saved} ${flash ? styles.ok : ""}`} role="status">
+          {flash && `✓ ${flash}`}
+        </span>
+        <button type="button" className={styles.tb} onClick={onClose}>
+          Cerrar
+        </button>
+      </div>
+    </>
+  );
+}
+
 /** Fila de un documento dentro del popover de un paso. */
 function DocLinkRow({
   flowId,
@@ -1332,16 +1516,25 @@ const Diagram = memo(function Diagram({
   docStatus,
   closed,
   closedPath,
+  gatewayAnswers,
 }: {
   linked: Set<string>;
   docStatus: Record<string, DocStatus>;
   closed: ClosedState | null;
   closedPath: UpstreamPath | null;
+  gatewayAnswers: Record<string, string>;
 }) {
   const closedEndId = closed?.endId ?? null;
   // El final activo nunca se atenúa (upstreamPath no se incluye a sí mismo en `nodes`).
   const dimNode = (id: string) => closedPath !== null && id !== closedEndId && !closedPath.nodes.has(id);
-  const dimEdge = (i: number) => closedPath !== null && !closedPath.edges.has(i);
+  // Una rama de compuerta se atenúa por el cierre actual, o (si esa compuerta no quedó
+  // resuelta por él) por una respuesta guardada que descartó esa rama.
+  const dimEdge = (i: number) => {
+    if (closedPath !== null) return !closedPath.edges.has(i);
+    const [from, , to] = EDGES[i];
+    const answer = gatewayAnswers[from];
+    return answer !== undefined && answer !== to;
+  };
   const poolTop = LANES[0].y0;
   const poolBot = LANES[LANES.length - 1].y1;
   const headTop = 563;
@@ -1559,13 +1752,15 @@ const Diagram = memo(function Diagram({
         {NODES.map((n) => {
           if (n.t === "g" || n.t === "p") {
             const r = GW / 2;
+            const answered =
+              n.t === "g" && (closedPath ? closedPath.nodes.has(n.id) : Boolean(gatewayAnswers[n.id]));
             return (
               <g key={n.id} opacity={dimNode(n.id) ? DIM_OPACITY : 1}>
                 <path
                   d={`M${n.x},${n.y - r} L${n.x + r},${n.y} L${n.x},${n.y + r} L${n.x - r},${n.y} Z`}
                   fill="#FFE699"
-                  stroke="#BF8F00"
-                  strokeWidth={2}
+                  stroke={answered ? "var(--done-line)" : "#BF8F00"}
+                  strokeWidth={answered ? 3 : 2}
                 />
                 <path
                   d={
@@ -1576,6 +1771,12 @@ const Diagram = memo(function Diagram({
                   stroke="#7F6000"
                   strokeWidth={3.4}
                 />
+                {answered && (
+                  <g>
+                    <circle cx={n.x - r + 3} cy={n.y - r + 3} r={9} fill="var(--done-line)" />
+                    <path d={`M${n.x - r - 1.5},${n.y - r + 3} l3,3 l5,-6`} stroke="#fff" strokeWidth={2} fill="none" />
+                  </g>
+                )}
                 {n.t === "g" &&
                   wrapWords(n.l, 16).map((ln, i) => (
                     <text key={i} x={n.x} y={n.y + r + 17 + i * 14} textAnchor="middle" fontSize={13} style={soft}>

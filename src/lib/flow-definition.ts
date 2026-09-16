@@ -31,6 +31,13 @@ export interface Flow {
   materials?: Material[];
   /** Si no es null/undefined, el flujo está cerrado: ver ClosedState. */
   closed?: ClosedState | null;
+  /**
+   * Respuesta elegida en cada compuerta (Sí/No…) que NO lleva directo a un final,
+   * por id de la compuerta → id del nodo al que lleva la rama elegida. Las que sí
+   * llevan directo a un final no se guardan aquí: cerrar ese final (ver `closed`)
+   * ya deja registrada cuál rama se tomó.
+   */
+  gatewayAnswers?: Record<string, string>;
 }
 
 /**
@@ -219,6 +226,9 @@ export const EDITABLE = NODES.filter((n) => n.t === "t" || n.t === "s");
 
 /** Eventos "Fin" del flujo: se pueden cerrar para marcar listos todos los pasos previos. */
 export const ENDS = NODES.filter((n) => n.t === "f");
+
+/** Compuertas de decisión (rombos "Sí/No" o similares); "p" (paralelo) no cuenta, no decide nada. */
+export const GATEWAYS = NODES.filter((n) => n.t === "g");
 
 export function dims(n: FlowNode): { w: number; h: number } {
   switch (n.t) {
@@ -446,6 +456,43 @@ export function upstreamSteps(nodeId: string): string[] {
     const node = BY_ID[id];
     return node && (node.t === "t" || node.t === "s");
   });
+}
+
+/**
+ * Si tomar esta rama lleva sin ambigüedad hasta un evento Fin (solo pasando por
+ * pasos con una única salida, sin cruzar otra compuerta sin responder), devuelve
+ * el id de ese Fin. Si en el camino aparece otra compuerta/paralelo, o un ciclo,
+ * devuelve null: ese caso no se puede resolver solo con esta respuesta.
+ */
+export function leadsToEnd(startId: string): string | null {
+  const seen = new Set<string>();
+  let cur = startId;
+  while (true) {
+    if (seen.has(cur)) return null;
+    seen.add(cur);
+    const node = BY_ID[cur];
+    if (!node) return null;
+    if (node.t === "f") return cur;
+    if (node.t === "g" || node.t === "p") return null;
+    const outs = EDGES.filter((e) => e[0] === cur);
+    if (outs.length !== 1) return null;
+    cur = outs[0][2];
+  }
+}
+
+export interface GatewayBranch {
+  edgeIndex: number;
+  label: string;
+  target: string;
+}
+
+/** Las ramas que salen de una compuerta (en este flujo, siempre dos). */
+export function gatewayBranches(gatewayId: string): GatewayBranch[] {
+  const branches: GatewayBranch[] = [];
+  EDGES.forEach((e, i) => {
+    if (e[0] === gatewayId) branches.push({ edgeIndex: i, label: e[4] ?? "", target: e[2] });
+  });
+  return branches;
 }
 
 /** Parte un texto en líneas de como máximo `max` caracteres (por palabras). */

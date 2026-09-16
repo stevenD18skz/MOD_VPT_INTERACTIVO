@@ -23,6 +23,7 @@ import {
   reopenEnd as remoteReopenEnd,
   setDocLink as remoteSetDocLink,
   setDocStatus as remoteSetDocStatus,
+  setGatewayAnswer as remoteSetGatewayAnswer,
   setNodeNote as remoteSetNote,
   setNodeStatus as remoteSetStatus,
   updateFlowInfo as remoteUpdateInfo,
@@ -317,4 +318,17 @@ export function reopenEnd(flowId: string, endId: string) {
     return { ...f, nodes: { ...f.nodes, ...f.closed.snapshot }, closed: null };
   });
   persist(() => remoteReopenEnd(flowId, endId));
+}
+
+/* ================= compuertas (Sí/No…) ================= */
+
+/** Respuesta de una compuerta que NO lleva directo a un final (`target: null` la borra). */
+export function setGatewayAnswer(flowId: string, gatewayId: string, target: string | null) {
+  updateFlow(flowId, (f) => {
+    const gatewayAnswers = { ...f.gatewayAnswers };
+    if (target) gatewayAnswers[gatewayId] = target;
+    else delete gatewayAnswers[gatewayId];
+    return { ...f, gatewayAnswers };
+  });
+  persist(() => remoteSetGatewayAnswer(flowId, gatewayId, target));
 }
