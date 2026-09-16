@@ -115,79 +115,6 @@ export function MaterialPanel({ flow, uploads, onClose }: { flow: Flow; uploads:
         </button>
       </header>
 
-      <div className={styles.matTop}>
-        {uploads ? (
-          <button
-            type="button"
-            className={`${styles.dropzone} ${dragOver ? styles.dropzoneOn : ""}`}
-            onClick={() => inputRef.current?.click()}
-          >
-            <UploadGlyph />
-            <strong>{dragOver ? "Suelta para subir" : "Arrastra archivos aquí"}</strong>
-            <span>o haz clic para elegirlos · máximo 50 MB por archivo</span>
-          </button>
-        ) : (
-          <p className={styles.matNote}>
-            La subida de archivos no está configurada (Vercel Blob). Por ahora puedes guardar enlaces.
-          </p>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            handleFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        {linkForm ? (
-          <MaterialLinkForm
-            onCancel={() => setLinkForm(false)}
-            onSave={(title, url) => {
-              addLinkMaterial(flow.id, title || new URL(url).hostname, url);
-              setLinkForm(false);
-              setFlash("Enlace guardado");
-            }}
-          />
-        ) : (
-          <div className={styles.dactions}>
-            <button type="button" className={styles.docAction} onClick={() => setLinkForm(true)}>
-              + Agregar enlace
-            </button>
-            <span className={styles.spacer} />
-            {flash && (
-              <span className={styles.ok} role="status">
-                ✓ {flash}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {queue.length > 0 && (
-        <ul className={styles.uploads} aria-label="Subidas">
-          {queue.map((q) => (
-            <li key={q.key} className={styles.uploadItem} data-state={q.state}>
-              <span className={styles.uploadName} title={q.name}>
-                {q.name}
-              </span>
-              <span className={q.state === "error" ? styles.error : q.state === "done" ? styles.ok : styles.saved}>
-                {q.state === "uploading" ? `${Math.round(q.progress)}%` : q.state === "done" ? "✓ Subido" : q.error}
-                {q.state === "error" && (
-                  <button type="button" className={styles.linkBtn} onClick={() => dismiss(q.key)}>
-                    Cerrar
-                  </button>
-                )}
-              </span>
-              <span className={styles.uploadBar} aria-hidden>
-                <span style={{ width: `${q.state === "error" ? 100 : q.progress}%` }} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
       {items.length > 0 && (
         <div className={styles.chips} role="group" aria-label="Filtrar material">
           {FILTERS.map((f) => (
@@ -216,6 +143,80 @@ export function MaterialPanel({ flow, uploads, onClose }: { flow: Flow; uploads:
               <MaterialItem key={m.id} flowId={flow.id} m={m} />
             ))}
           </ul>
+        )}
+      </div>
+
+      <div className={styles.matFooter}>
+        {uploads ? (
+          <button
+            type="button"
+            className={`${styles.dropzone} ${dragOver ? styles.dropzoneOn : ""}`}
+            onClick={() => inputRef.current?.click()}
+          >
+            <UploadGlyph />
+            <strong>{dragOver ? "Suelta para subir" : "Arrastra archivos aquí"}</strong>
+            <span>o haz clic para elegirlos · máximo 50 MB por archivo</span>
+          </button>
+        ) : (
+          <p className={styles.matNote}>
+            La subida de archivos no está configurada (Vercel Blob). Por ahora puedes guardar enlaces.
+          </p>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+
+        {queue.length > 0 && (
+          <ul className={styles.uploads} aria-label="Subidas">
+            {queue.map((q) => (
+              <li key={q.key} className={styles.uploadItem} data-state={q.state}>
+                <span className={styles.uploadName} title={q.name}>
+                  {q.name}
+                </span>
+                <span className={q.state === "error" ? styles.error : q.state === "done" ? styles.ok : styles.saved}>
+                  {q.state === "uploading" ? `${Math.round(q.progress)}%` : q.state === "done" ? "✓ Subido" : q.error}
+                  {q.state === "error" && (
+                    <button type="button" className={styles.linkBtn} onClick={() => dismiss(q.key)}>
+                      Cerrar
+                    </button>
+                  )}
+                </span>
+                <span className={styles.uploadBar} aria-hidden>
+                  <span style={{ width: `${q.state === "error" ? 100 : q.progress}%` }} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {linkForm ? (
+          <MaterialLinkForm
+            onCancel={() => setLinkForm(false)}
+            onSave={(title, url) => {
+              addLinkMaterial(flow.id, title || new URL(url).hostname, url);
+              setLinkForm(false);
+              setFlash("Enlace guardado");
+            }}
+          />
+        ) : (
+          <div className={styles.dactions}>
+            <button type="button" className={styles.docAction} onClick={() => setLinkForm(true)}>
+              + Agregar enlace
+            </button>
+            <span className={styles.spacer} />
+            {flash && (
+              <span className={styles.ok} role="status">
+                ✓ {flash}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </aside>

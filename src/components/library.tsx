@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { EDITABLE, PHASES, summarize } from "@/lib/flow-definition";
 import { createFlow, deleteFlow, updateFlowInfo, useFlows, useStoreMode, type Flow } from "@/lib/flow-store";
 import { OfflineNotice, SyncBadge } from "@/components/sync-badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type Summary = ReturnType<typeof summarize>;
 type Item = { flow: Flow; sum: Summary };
@@ -69,6 +70,7 @@ export function Library() {
           </div>
           <div className="ml-auto flex items-center gap-4">
             <SyncBadge />
+            <ThemeToggle className={`${ghostBtn} !size-9 !p-0`} />
             <button
               type="button"
               className={primaryBtn}

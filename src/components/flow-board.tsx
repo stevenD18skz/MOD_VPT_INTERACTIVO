@@ -49,6 +49,11 @@ import {
 } from "@/lib/flow-store";
 import { ClipGlyph, MaterialPanel } from "./material-panel";
 import { OfflineNotice, SyncBadge } from "./sync-badge";
+import { ThemeToggle } from "./theme-toggle";
+
+/** Límites de zoom del lienzo: por debajo de MIN_SCALE el diagrama deja de ser legible. */
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 3;
 
 export function FlowBoard({ id }: { id: string }) {
   const flows = useFlows();
@@ -129,7 +134,7 @@ function Board({ flow }: { flow: Flow }) {
   const fitHeight = useCallback(() => {
     const vp = vpRef.current;
     if (!vp) return;
-    applyScale(Math.max(0.05, (vp.clientHeight - 16) / H));
+    applyScale(Math.max(MIN_SCALE, (vp.clientHeight - 16) / H));
     vp.scrollLeft = 0;
     vp.scrollTop = 0;
   }, [applyScale]);
@@ -139,7 +144,7 @@ function Board({ flow }: { flow: Flow }) {
       const vp = vpRef.current;
       if (!vp) return;
       const old = scaleRef.current;
-      const s = Math.min(3, Math.max(0.05, old * f));
+      const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, old * f));
       const r = vp.getBoundingClientRect();
       const px = (vp.scrollLeft + (cx - r.left)) / old;
       const py = (vp.scrollTop + (cy - r.top)) / old;
@@ -273,6 +278,7 @@ function Board({ flow }: { flow: Flow }) {
         </div>
         <div className={styles.spacer} />
         <SyncBadge />
+        <ThemeToggle className={styles.tb} />
         <span className={styles.progress}>
           {done} / {EDITABLE.length} listas
         </span>

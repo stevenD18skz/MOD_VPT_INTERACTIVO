@@ -33,8 +33,13 @@
   --done-dot: #4c8b2b;
 }
 
+/*
+ * Tema oscuro: se aplica por preferencia del sistema (mientras el usuario no haya
+ * elegido uno) y también de forma explícita vía [data-theme], que fijado desde
+ * ThemeToggle (src/components/theme-toggle.tsx) siempre gana sobre el sistema.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #14171c;
     --chrome: #1c2027;
     --chrome-2: #232830;
@@ -63,6 +68,34 @@
   }
 }
 
+:root[data-theme="dark"] {
+  --bg: #14171c;
+  --chrome: #1c2027;
+  --chrome-2: #232830;
+  --ink: #e7eaef;
+  --ink-soft: #9aa4b2;
+  --line: #333a45;
+  --paper: #1a1e24;
+  --lane-head: #22262e;
+  --lane-line: #4a5260;
+  --phase-line: #3c434e;
+  --flow: #9aa4b2;
+  --doc-fill: #272c34;
+  --doc-line: #5a6270;
+  --accent: #4f94d4;
+  --node-ink: #e7eaef;
+  --link-fill: #1b2d42;
+  --danger: #e5675a;
+  --todo-fill: #1e3348;
+  --todo-line: #4f94d4;
+  --prog-fill: #3d3315;
+  --prog-line: #d6a723;
+  --test-fill: #31204a;
+  --test-line: #a06fd0;
+  --done-fill: #1f3a1c;
+  --done-line: #63b13f;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-chrome: var(--chrome);
@@ -79,4 +112,31 @@
 body {
   background: var(--bg);
   color: var(--ink);
+}
+
+/* ---------- barras de desplazamiento a juego con el tema ---------- */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-soft);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
